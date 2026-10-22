@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-DOCS_DIR = HERE / "docs"
+DOCS_DIR = Path(os.environ.get("DOCS_DIR", HERE / "docs"))  # 可用環境變數 DOCS_DIR 切換資料集
 INDEX_FILE = HERE / "index.npz"
 CHUNKS_FILE = HERE / "chunks.json"
 
@@ -81,7 +81,7 @@ def build_index():
         for i, c in enumerate(chunk_text(text)):
             records.append({"source": name, "chunk_id": i, "text": c})
     if not records:
-        sys.exit("docs/ 內沒有 .md 或 .txt 檔")
+        sys.exit(f"{DOCS_DIR} 內沒有 .md 或 .txt 檔")
     t0 = time.time()
     matrix = embed([r["text"] for r in records])
     np.savez(INDEX_FILE, matrix=matrix)
@@ -125,11 +125,15 @@ def generate(prompt):
     client = anthropic.Anthropic()  # 讀取 ANTHROPIC_API_KEY
     msg = client.messages.create(
         model=LLM_MODEL,
-        max_tokens=800,
+        max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
     )
     usage = msg.usage
-    return msg.content[0].text, usage.input_tokens, usage.output_tokens
+    # 回應的 content 是多個區塊 (可能先有 thinking 區塊, 再有 text 區塊), 只取 text
+    text = "".join(b.text for b in msg.content if b.type == "text")
+    if not text:
+        sys.exit(f"模型沒有回傳文字 (stop_reason={msg.stop_reason}), 可嘗試調高 max_tokens")
+    return text, usage.input_tokens, usage.output_tokens
 
 
 # ---------- Step 5: 串起來並量測延遲 ----------

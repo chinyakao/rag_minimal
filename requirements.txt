@@ -2,3 +2,4 @@ sentence-transformers
 numpy
 anthropic
 python-dotenv
+requests  # 只有 scripts/fetch_wiki_artists.py 需要

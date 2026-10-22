@@ -4,3 +4,7 @@ __pycache__/
 index.npz
 chunks.json
 .DS_Store
+
+# 維基資料集不進版控 (CC BY-SA), 用 scripts/fetch_wiki_artists.py 下載
+docs/*
+!docs/.gitkeep
