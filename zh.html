@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 學習日誌 Week 1</title>
+<meta name="description" content="不用框架從零寫一個 RAG, 用 20 題評估集量測 hit@3 只有 0.50. 記錄我學到的事與下一步.">
+<link rel="canonical" href="https://chinyakao.github.io/rag_minimal/zh.html">
+<link rel="alternate" hreflang="en" href="https://chinyakao.github.io/rag_minimal/">
+<link rel="alternate" hreflang="zh-Hant" href="https://chinyakao.github.io/rag_minimal/zh.html">
+<meta property="og:title" content="RAG 學習日誌 Week 1">
+<meta property="og:description" content="不用框架從零寫一個 RAG, 用 20 題評估集量測 hit@3 只有 0.50. 記錄我學到的事與下一步.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://chinyakao.github.io/rag_minimal/zh.html">
+<meta property="og:image" content="https://chinyakao.github.io/rag_minimal/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg:#fafaf7; --fg:#1f2328; --muted:#5b636b; --line:#e3e1da; --card:#ffffff;
+  --accent:#2f6f5e; --ok:#2f6f5e; --okbg:#e3f0ea; --miss:#a8472f; --missbg:#f7e6e0;
+  --manual:#8a6d1f; --manualbg:#f6efd8; --refuse:#2f5f8a; --refusebg:#e1ecf6; --code:#f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+    --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+    --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+  --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+  --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:720px; margin:0 auto; padding:48px 16px 80px; }
+h1 { font-size:2rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.3rem; margin:48px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+p, li { font-size:1.02rem; }
+.sub { color:var(--muted); margin:0 0 28px; }
+.kpi { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0; }
+.kpi div { flex:1 1 150px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.kpi b { display:block; font-size:1.8rem; line-height:1.2; }
+.kpi span { color:var(--muted); font-size:.9rem; }
+.bar { display:flex; align-items:center; gap:10px; margin:8px 0; }
+.bl { width:6.5em; font-size:.92rem; color:var(--muted); }
+.track { flex:1; height:14px; background:var(--line); border-radius:7px; overflow:hidden; }
+.track i { display:block; height:100%; background:var(--accent); border-radius:7px; }
+.bv { width:2.6em; text-align:right; font-variant-numeric:tabular-nums; font-size:.92rem; }
+ul.grid { list-style:none; padding:0; margin:16px 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+.cell { border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; font-size:.82rem; border:1px solid transparent; }
+.cell b { font-size:1rem; }
+.cell.ok { background:var(--okbg); color:var(--ok); }
+.cell.miss { background:var(--missbg); color:var(--miss); }
+.cell.manual { background:var(--manualbg); color:var(--manual); }
+.cell.refuse { background:var(--refusebg); color:var(--refuse); }
+.legend { color:var(--muted); font-size:.88rem; }
+code { background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em; }
+pre { background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:.88rem; line-height:1.6; }
+pre code { background:none; padding:0; }
+.note { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:8px; padding:12px 16px; margin:16px 0; }
+.tag { color:var(--manual); font-size:.85rem; }
+footer { margin-top:56px; color:var(--muted); font-size:.88rem; }
+@media (max-width:480px) { h1 { font-size:1.6rem; } .bl { width:5.5em; } }
+
+.lang { text-align:right; font-size:.9rem; margin-bottom:8px; }
+.lang a { color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; }
+.lang a:hover { border-color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<nav class="lang"><a href="./" hreflang="en">English</a></nav>
+<h1>RAG 學習日誌 Week 1</h1>
+<p class="sub">不用 LangChain, 從零寫一個 RAG, 然後老實量測它到底準不準. 2026-10-22</p>
+
+<p>我是做 Linux 系統出身的工程師, 最近開始接觸 LLM 應用. 第一週的目標很單純: <b>先懂原理, 再用框架</b>. 所以我只用 numpy, sentence-transformers 與 Anthropic SDK, 寫了一個約 170 行的最小 RAG, 並為它做了一組 20 題的評估集.</p>
+
+<div class="kpi">
+  <div><b>0.50</b><span>hit@3 (8 / 16 題)</span></div>
+  <div><b>~170</b><span>行程式, 無框架</span></div>
+  <div><b>20</b><span>題評估集, 含邊界題</span></div>
+</div>
+
+<h2>做了什麼</h2>
+<ul>
+  <li><b>切塊</b>: 固定長度滑動視窗 (400 字元, 重疊 80).</li>
+  <li><b>嵌入與檢索</b>: 多語言 MiniLM 模型, 向量正規化後以矩陣相乘計算 cosine similarity, 取前 k 名.</li>
+  <li><b>生成</b>: 提示詞要求只依資料回答, 句尾標 <code>[編號]</code> 引用, 資料不足就拒答.</li>
+  <li><b>量測</b>: 每次請求記錄檢索與 LLM 的耗時, 以及 token 數 (成本的起點).</li>
+  <li><b>評估</b>: 自己寫 <code>eval.py</code>, 用 hit@k 量化檢索, 另外測拒答.</li>
+</ul>
+
+<h2>什麼是 hit@3</h2>
+<p>前 3 個檢索結果裡, 有沒有包含正確答案所在的文件. 有就算命中. RAG 的品質有個上限: 正確資料沒被撈出來, 模型再強也答不對. hit@k 就是在量這個上限, 不用呼叫 LLM, 不花 API 費用, 可以反覆重跑.</p>
+
+<h2>評估結果</h2>
+<p>文件集是 20 位華語藝人的公開維基條目. 20 題分五種題型, 其中 4 題沒有固定的正確文件 (3 題全庫統計題, 1 題應該拒答), 所以 hit@3 只計 16 題.</p>
+<div>
+<div class="bar"><span class="bl">單一</span><div class="track"><i style="width:40%"></i></div><span class="bv">2/5</span></div>
+<div class="bar"><span class="bl">多段落</span><div class="track"><i style="width:80%"></i></div><span class="bv">4/5</span></div>
+<div class="bar"><span class="bl">跨條目</span><div class="track"><i style="width:33%"></i></div><span class="bv">1/3</span></div>
+<div class="bar"><span class="bl">推理</span><div class="track"><i style="width:50%"></i></div><span class="bv">1/2</span></div>
+<div class="bar"><span class="bl">邊界</span><div class="track"><i style="width:0%"></i></div><span class="bv">0/1</span></div>
+</div>
+<ul class="grid">
+<li class="cell ok" title="#1 · 單一 · 命中"><b>1</b><span>命中</span></li>
+<li class="cell ok" title="#2 · 單一 · 命中"><b>2</b><span>命中</span></li>
+<li class="cell miss" title="#3 · 單一 · 未命中"><b>3</b><span>未命中</span></li>
+<li class="cell miss" title="#4 · 單一 · 未命中"><b>4</b><span>未命中</span></li>
+<li class="cell miss" title="#5 · 單一 · 未命中"><b>5</b><span>未命中</span></li>
+<li class="cell ok" title="#6 · 多段落 · 命中"><b>6</b><span>命中</span></li>
+<li class="cell ok" title="#7 · 多段落 · 命中"><b>7</b><span>命中</span></li>
+<li class="cell ok" title="#8 · 多段落 · 命中"><b>8</b><span>命中</span></li>
+<li class="cell miss" title="#9 · 多段落 · 未命中"><b>9</b><span>未命中</span></li>
+<li class="cell ok" title="#10 · 多段落 · 命中"><b>10</b><span>命中</span></li>
+<li class="cell ok" title="#11 · 跨條目 · 命中"><b>11</b><span>命中</span></li>
+<li class="cell manual" title="#12 · 跨條目 · 人工檢查"><b>12</b><span>人工檢查</span></li>
+<li class="cell miss" title="#13 · 跨條目 · 未命中"><b>13</b><span>未命中</span></li>
+<li class="cell manual" title="#14 · 跨條目 · 人工檢查"><b>14</b><span>人工檢查</span></li>
+<li class="cell miss" title="#15 · 跨條目 · 未命中"><b>15</b><span>未命中</span></li>
+<li class="cell ok" title="#16 · 推理 · 命中"><b>16</b><span>命中</span></li>
+<li class="cell miss" title="#17 · 推理 · 未命中"><b>17</b><span>未命中</span></li>
+<li class="cell manual" title="#18 · 推理 · 人工檢查"><b>18</b><span>人工檢查</span></li>
+<li class="cell miss" title="#19 · 邊界 · 未命中"><b>19</b><span>未命中</span></li>
+<li class="cell refuse" title="#20 · 邊界 · 正確拒答"><b>20</b><span>正確拒答</span></li>
+</ul>
+<p class="legend">命中 = 正確文件進前 3 名; 人工檢查 = 全庫統計題, 沒有單一正確文件; 正確拒答 = 資料中沒有答案, 模型有拒答.</p>
+
+<h2>我學到的事</h2>
+<h3>1. 檢索分數不能當相關度</h3>
+<p>檢索錯誤的題目, 最高分也有 0.62 到 0.73, 比不少答對的題目還高. 所以「分數低於門檻就視為無關」這個直覺做法, 在這組資料上行不通.</p>
+<h3>2. 點名人物的問題反而常失敗</h3>
+<p>第 3, 4, 5, 9, 13, 15, 17 題的問題都明確寫了藝人名字, 但撈回來的卻是別人的文件. 我的假設 (<span class="tag">尚未驗證</span>): 切塊後的段落不一定含有人名; 小型多語言模型對專有名詞的區分力有限; 簡繁體差異也可能有影響. 下週會用實驗驗證, 而不是憑感覺相信.</p>
+<h3>3. 有些問題 top-k 檢索本來就答不好</h3>
+<p>像「哪些藝人拿過金曲獎最佳演唱」這種需要掃過全部文件的統計題, 模型只能根據撈到的 3 位藝人回答, 而且它誠實地說「資料不足」. 這不是調參數能解決的, 要靠多次查詢或事先整理成結構化資料.</p>
+<h3>4. 「答對」有時是巧合</h3>
+<p>有一題模型回答「資料中找不到答案」, 看起來很正確. 但仔細查才發現是因為正確文件根本沒被撈到, 而那份文件其實有相關資訊. 所以評估不能只看最後答案, 要把檢索與生成分開看.</p>
+<h3>5. API 回傳的 content 是一串區塊, 不是一段文字</h3>
+<p>我一開始寫死取 <code>content[0].text</code>, 結果模型先回了一個推理區塊 (thinking block), 程式就炸了. 這種錯誤是間歇性的: 同一份程式有時成功, 有時失敗. 正確做法是走訪所有區塊, 只取文字型別的.</p><pre><code>text = "".join(b.text for b in msg.content if b.type == "text")</code></pre>
+
+<div class="note">樣本只有 20 題, 一題就差 5 個百分點, 這些數字只能當方向參考, 不是結論.</div>
+
+<h2>下一步</h2>
+<p>每次只改一個變數, 用同一組 20 題比較 hit@3:</p>
+<ol>
+  <li>切塊時在每個 chunk 前加上標題 (藝人名).</li>
+  <li>加入 BM25, 並用 RRF 融合關鍵字與向量排名.</li>
+  <li>調整 chunk size 與 overlap.</li>
+  <li>統一簡繁體, 確認影響.</li>
+</ol>
+
+<footer>
+個人學習紀錄. 資料來源為公開的維基百科條目, 本頁不轉載條目內容.
+</footer>
+</main>
+</body>
+</html>

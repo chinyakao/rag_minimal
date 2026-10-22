@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Learning Journal: Week 1</title>
+<meta name="description" content="I built a RAG from scratch without a framework and measured it with a 20-question eval set: hit@3 was only 0.50. Here is what I learned and what I'll test next.">
+<link rel="canonical" href="https://chinyakao.github.io/rag_minimal/">
+<link rel="alternate" hreflang="en" href="https://chinyakao.github.io/rag_minimal/">
+<link rel="alternate" hreflang="zh-Hant" href="https://chinyakao.github.io/rag_minimal/zh.html">
+<meta property="og:title" content="RAG Learning Journal: Week 1">
+<meta property="og:description" content="I built a RAG from scratch without a framework and measured it with a 20-question eval set: hit@3 was only 0.50. Here is what I learned and what I'll test next.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://chinyakao.github.io/rag_minimal/">
+<meta property="og:image" content="https://chinyakao.github.io/rag_minimal/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg:#fafaf7; --fg:#1f2328; --muted:#5b636b; --line:#e3e1da; --card:#ffffff;
+  --accent:#2f6f5e; --ok:#2f6f5e; --okbg:#e3f0ea; --miss:#a8472f; --missbg:#f7e6e0;
+  --manual:#8a6d1f; --manualbg:#f6efd8; --refuse:#2f5f8a; --refusebg:#e1ecf6; --code:#f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+    --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+    --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+  --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+  --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:720px; margin:0 auto; padding:48px 16px 80px; }
+h1 { font-size:2rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.3rem; margin:48px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+p, li { font-size:1.02rem; }
+.sub { color:var(--muted); margin:0 0 28px; }
+.kpi { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0; }
+.kpi div { flex:1 1 150px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.kpi b { display:block; font-size:1.8rem; line-height:1.2; }
+.kpi span { color:var(--muted); font-size:.9rem; }
+.bar { display:flex; align-items:center; gap:10px; margin:8px 0; }
+.bl { width:6.5em; font-size:.92rem; color:var(--muted); }
+.track { flex:1; height:14px; background:var(--line); border-radius:7px; overflow:hidden; }
+.track i { display:block; height:100%; background:var(--accent); border-radius:7px; }
+.bv { width:2.6em; text-align:right; font-variant-numeric:tabular-nums; font-size:.92rem; }
+ul.grid { list-style:none; padding:0; margin:16px 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+.cell { border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; font-size:.82rem; border:1px solid transparent; }
+.cell b { font-size:1rem; }
+.cell.ok { background:var(--okbg); color:var(--ok); }
+.cell.miss { background:var(--missbg); color:var(--miss); }
+.cell.manual { background:var(--manualbg); color:var(--manual); }
+.cell.refuse { background:var(--refusebg); color:var(--refuse); }
+.legend { color:var(--muted); font-size:.88rem; }
+code { background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em; }
+pre { background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:.88rem; line-height:1.6; }
+pre code { background:none; padding:0; }
+.note { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:8px; padding:12px 16px; margin:16px 0; }
+.tag { color:var(--manual); font-size:.85rem; }
+footer { margin-top:56px; color:var(--muted); font-size:.88rem; }
+@media (max-width:480px) { h1 { font-size:1.6rem; } .bl { width:5.5em; } }
+
+.lang { text-align:right; font-size:.9rem; margin-bottom:8px; }
+.lang a { color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; }
+.lang a:hover { border-color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<nav class="lang"><a href="zh.html" hreflang="zh-Hant">繁體中文</a></nav>
+<h1>RAG Learning Journal: Week 1</h1>
+<p class="sub">No LangChain. I built a RAG from scratch, then honestly measured how accurate it is. 2026-10-22</p>
+
+<p>I'm an engineer with a Linux systems background, and I recently started working on LLM applications. My goal for week one was simple: <b>understand the principles first, then use frameworks</b>. So I used only numpy, sentence-transformers and the Anthropic SDK to write a minimal RAG of about 170 lines, and built a 20-question evaluation set for it.</p>
+
+<div class="kpi">
+  <div><b>0.50</b><span>hit@3 (8 of 16 questions)</span></div>
+  <div><b>~170</b><span>lines of code, no framework</span></div>
+  <div><b>20</b><span>eval questions, incl. boundary cases</span></div>
+</div>
+
+<h2>What I built</h2>
+<ul>
+  <li><b>Chunking</b>: fixed-length sliding window (400 characters, 80 overlap).</li>
+  <li><b>Embedding &amp; retrieval</b>: a multilingual MiniLM model; vectors are normalized, so a matrix multiply gives cosine similarity, and I take the top k.</li>
+  <li><b>Generation</b>: the prompt requires answers only from the provided context, a <code>[n]</code> citation after each sentence, and a refusal when the context is insufficient.</li>
+  <li><b>Measurement</b>: every request logs retrieval time, LLM time and token counts (the starting point for cost tracking).</li>
+  <li><b>Evaluation</b>: my own <code>eval.py</code>, using hit@k for retrieval plus a refusal check.</li>
+</ul>
+
+<h2>What is hit@3?</h2>
+<p>Whether the correct source document appears in the top 3 retrieved results. If it does, that's a hit. RAG quality has a ceiling: if the right material isn't retrieved, even a strong model can't answer correctly. hit@k measures that ceiling. It needs no LLM call, costs nothing, and can be re-run as often as you like.</p>
+
+<h2>Results</h2>
+<p>The corpus is the public Wikipedia entries of 20 Mandarin-language artists. The 20 questions fall into five types; 4 of them have no single correct document (3 corpus-wide aggregation questions and 1 that should be refused), so hit@3 counts only 16.</p>
+<div>
+<div class="bar"><span class="bl">Single entry</span><div class="track"><i style="width:40%"></i></div><span class="bv">2/5</span></div>
+<div class="bar"><span class="bl">Multi-paragraph</span><div class="track"><i style="width:80%"></i></div><span class="bv">4/5</span></div>
+<div class="bar"><span class="bl">Cross-entry</span><div class="track"><i style="width:33%"></i></div><span class="bv">1/3</span></div>
+<div class="bar"><span class="bl">Multi-step</span><div class="track"><i style="width:50%"></i></div><span class="bv">1/2</span></div>
+<div class="bar"><span class="bl">Retrieval boundary</span><div class="track"><i style="width:0%"></i></div><span class="bv">0/1</span></div>
+</div>
+<ul class="grid">
+<li class="cell ok" title="#1 · Single entry · Hit"><b>Q1</b><span>Hit</span></li>
+<li class="cell ok" title="#2 · Single entry · Hit"><b>Q2</b><span>Hit</span></li>
+<li class="cell miss" title="#3 · Single entry · Miss"><b>Q3</b><span>Miss</span></li>
+<li class="cell miss" title="#4 · Single entry · Miss"><b>Q4</b><span>Miss</span></li>
+<li class="cell miss" title="#5 · Single entry · Miss"><b>Q5</b><span>Miss</span></li>
+<li class="cell ok" title="#6 · Multi-paragraph · Hit"><b>Q6</b><span>Hit</span></li>
+<li class="cell ok" title="#7 · Multi-paragraph · Hit"><b>Q7</b><span>Hit</span></li>
+<li class="cell ok" title="#8 · Multi-paragraph · Hit"><b>Q8</b><span>Hit</span></li>
+<li class="cell miss" title="#9 · Multi-paragraph · Miss"><b>Q9</b><span>Miss</span></li>
+<li class="cell ok" title="#10 · Multi-paragraph · Hit"><b>Q10</b><span>Hit</span></li>
+<li class="cell ok" title="#11 · Cross-entry · Hit"><b>Q11</b><span>Hit</span></li>
+<li class="cell manual" title="#12 · Cross-entry · Manual check"><b>Q12</b><span>Manual check</span></li>
+<li class="cell miss" title="#13 · Cross-entry · Miss"><b>Q13</b><span>Miss</span></li>
+<li class="cell manual" title="#14 · Cross-entry · Manual check"><b>Q14</b><span>Manual check</span></li>
+<li class="cell miss" title="#15 · Cross-entry · Miss"><b>Q15</b><span>Miss</span></li>
+<li class="cell ok" title="#16 · Multi-step · Hit"><b>Q16</b><span>Hit</span></li>
+<li class="cell miss" title="#17 · Multi-step · Miss"><b>Q17</b><span>Miss</span></li>
+<li class="cell manual" title="#18 · Multi-step · Manual check"><b>Q18</b><span>Manual check</span></li>
+<li class="cell miss" title="#19 · Retrieval boundary · Miss"><b>Q19</b><span>Miss</span></li>
+<li class="cell refuse" title="#20 · Retrieval boundary · Correct refusal"><b>Q20</b><span>Correct refusal</span></li>
+</ul>
+<p class="legend">Hit = correct document in the top 3; Manual check = corpus-wide question with no single correct document; Correct refusal = no answer in the data, and the model refused.</p>
+
+<h2>What I learned</h2>
+<h3>1. Similarity scores don't tell you relevance</h3>
+<p>Wrong retrievals still had top scores of 0.62 to 0.73, higher than many correct ones. The intuitive approach of treating anything below a score threshold as irrelevant doesn't work on this data.</p>
+<h3>2. Questions that name a person failed more often</h3>
+<p>Questions 3, 4, 5, 9, 13, 15 and 17 all name the artist explicitly, yet retrieval returned other people's documents. My hypotheses (<span class="tag">not yet verified</span>): chunks don't always contain the person's name; a small multilingual model separates proper nouns poorly; and Traditional/Simplified Chinese differences may play a role. I'll test these next week instead of trusting a hunch.</p>
+<h3>3. Some questions are a poor fit for top-k retrieval</h3>
+<p>For questions like "which artists have won a Golden Melody Award for best vocal performance", which require scanning every document, the model can only answer from the 3 artists it retrieved, and it honestly said the data was insufficient. Tuning parameters won't fix this; it needs repeated queries or pre-structured data.</p>
+<h3>4. A "correct" answer can be a coincidence</h3>
+<p>On one question the model answered "not found in the data", which looked right. On inspection, it was because the correct document was never retrieved, and that document did contain relevant information. So don't judge only the final answer: look at retrieval and generation separately.</p>
+<h3>5. The API returns a list of content blocks, not a string</h3>
+<p>I first hard-coded <code>content[0].text</code>, and the model sometimes returned a reasoning (thinking) block first, which crashed the program. The failure was intermittent: the same code sometimes worked and sometimes didn't. The fix is to iterate over all blocks and keep only the text ones.</p><pre><code>text = "".join(b.text for b in msg.content if b.type == "text")</code></pre>
+
+<div class="note">With only 20 questions, one question moves the score by 5 percentage points. Treat these numbers as direction, not conclusions.</div>
+
+<h2>Next steps</h2>
+<p>One change at a time, comparing hit@3 on the same 20 questions:</p>
+<ol>
+  <li>Prefix every chunk with its title (the artist's name).</li>
+  <li>Add BM25 and fuse keyword and vector rankings with RRF.</li>
+  <li>Tune chunk size and overlap.</li>
+  <li>Normalize Traditional/Simplified Chinese and check the effect.</li>
+</ol>
+
+<footer>
+Personal learning notes. The data comes from public Wikipedia entries; this page does not reproduce entry content.
+</footer>
+</main>
+</body>
+</html>
