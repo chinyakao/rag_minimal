@@ -1,7 +1,7 @@
 """最小 RAG: 不用 LangChain, 只用 numpy + sentence-transformers + Anthropic SDK.
 
 用法:
-    python rag.py index                      # 讀 docs/ 建索引
+    python rag.py index                      # 讀 data/ 建索引
     python rag.py ask "你的問題"              # 檢索 + 生成
     python rag.py ask "你的問題" --no-llm     # 只看檢索結果 (不需 API key)
 """
@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-DOCS_DIR = Path(os.environ.get("DOCS_DIR", HERE / "docs"))  # 可用環境變數 DOCS_DIR 切換資料集
+DATA_DIR = Path(os.environ.get("DATA_DIR", HERE / "data"))  # 可用環境變數 DATA_DIR 切換資料集
 INDEX_FILE = HERE / "index.npz"
 CHUNKS_FILE = HERE / "chunks.json"
 
@@ -52,7 +52,7 @@ def get_model():
 # ---------- Step 1: 載入與切塊 ----------
 def load_docs():
     docs = []
-    for p in sorted(DOCS_DIR.glob("*")):
+    for p in sorted(DATA_DIR.glob("*")):
         if p.suffix.lower() in {".md", ".txt"}:
             docs.append((p.name, p.read_text(encoding="utf-8")))
     return docs
@@ -81,7 +81,7 @@ def build_index():
         for i, c in enumerate(chunk_text(text)):
             records.append({"source": name, "chunk_id": i, "text": c})
     if not records:
-        sys.exit(f"{DOCS_DIR} 內沒有 .md 或 .txt 檔")
+        sys.exit(f"{DATA_DIR} 內沒有 .md 或 .txt 檔")
     t0 = time.time()
     matrix = embed([r["text"] for r in records])
     np.savez(INDEX_FILE, matrix=matrix)

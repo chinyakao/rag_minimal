@@ -3,7 +3,7 @@
 
 安裝依賴:  pip install requests
 執行:      WIKI_CONTACT=you@example.com python scripts/fetch_wiki_artists.py
-輸出:      <repo>/docs/<條目名>.md  (docs/ 內容不進版控, 見 .gitignore)
+輸出:      <repo>/data/<條目名>.md  (data/ 內容不進版控, 見 .gitignore)
 
 維基百科文字採 CC BY-SA 4.0 授權, 每個檔案開頭都附原網址與授權說明.
 """
@@ -25,7 +25,7 @@ API = "https://zh.wikipedia.org/w/api.php"
 # Wikimedia 要求帶有可辨識的 User-Agent: 請用環境變數 WIKI_CONTACT 提供你的聯絡方式 (不要寫進程式碼)
 CONTACT = os.environ.get("WIKI_CONTACT", "your_email@example.com")
 HEADERS = {"User-Agent": f"rag-practice-script/1.0 ({CONTACT})"}
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
 
 def fetch(title: str) -> dict:
