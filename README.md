@@ -8,7 +8,7 @@
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python rag.py index                        # 讀 docs/ 建索引
+python rag.py index                        # 讀 data/ 建索引
 python rag.py ask "cgroups 可以限制什麼?" --no-llm   # 只看檢索, 不需 API key
 cp .env.example .env && chmod 600 .env     # 編輯 .env, 填入 ANTHROPIC_API_KEY (.env 已被 .gitignore 排除)
 python rag.py ask "cgroups 可以限制什麼?"            # 檢索 + 生成
@@ -17,7 +17,7 @@ python eval.py                              # 計算 hit@3
 
 ### 取得資料集 (維基百科條目)
 
-`docs/` 內的維基條目文字採 CC BY-SA 4.0 授權, 本 repo **不轉載**, 請自行下載:
+`data/` 內的維基條目文字採 CC BY-SA 4.0 授權, 本 repo **不轉載**, 請自行下載:
 
 ```bash
 pip install requests
@@ -44,7 +44,8 @@ python eval.py
 
 - `rag.py`: 索引, 檢索, 生成的主程式
 - `eval.py`: hit@k 檢索評估
-- `docs/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DOCS_DIR` 指定其他資料夾)
+- `data/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DATA_DIR` 指定其他資料夾)
+- `docs/`: GitHub Pages 要發布的網頁檔案 (`index.html` 英文版, `zh.html` 繁體中文版, `og-image.png` 分享預覽圖)
 - `scripts/fetch_wiki_artists.py`: 下載 20 位藝人的維基條目並轉成 Markdown
 - `wiki_manifest.tsv`: 本專案評估所用條目的原始網址與版本連結
 - `requirements.txt`: 相依套件
@@ -69,7 +70,7 @@ python eval.py
 
 ## Baseline 評估結果 (2026-10-22)
 
-設定: 藝人維基文件 20 份 (`docs/`), 固定長度切塊 (400 字元, 重疊 80), 向量檢索 only
+設定: 藝人維基文件 20 份 (`data/`), 固定長度切塊 (400 字元, 重疊 80), 向量檢索 only
 (paraphrase-multilingual-MiniLM-L12-v2, cosine), 評估 k=3, 生成用 `TOP_K=4`. 題目共 20 題, 見 `eval.py`.
 執行指令: `python eval.py` (只看檢索) 與 `python eval.py --llm` (另測拒答與人工檢查題).
 
