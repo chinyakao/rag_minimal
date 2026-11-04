@@ -31,6 +31,17 @@ python eval.py
   我評估時用的版本見 `wiki_manifest.tsv` (版本永久連結).
 - 腳本抓取的是各條目當下的最新版本, 無法精確還原舊版本.
 
+### 英文資料集 (Kubernetes 官方文件)
+
+`data/k8s/` 是 28 頁 Kubernetes concepts 文件 (CC BY 4.0), 同樣不進版控, 用腳本下載. 腳本固定在某個 commit, 結果可重現; 來源見 `k8s_manifest.tsv`.
+
+```bash
+python scripts/fetch_k8s_docs.py           # 下載到 data/k8s/
+DATA_DIR=data/k8s python rag.py index      # 建英文索引 (存成 index_k8s.npz, 不會蓋掉中文索引)
+DATA_DIR=data/k8s python rag.py ask "What is the default restartPolicy of a Pod?" --no-llm
+python eval.py --k8s                       # 英文 20 題 (題庫在 eval_k8s.py)
+```
+
 ### 設定金鑰 (.env)
 
 - API key 到 Claude Console (console.anthropic.com) 建立, 僅顯示一次, 請立刻存好.
