@@ -1,0 +1,4 @@
+# OpenVINO 後端與 benchmark 額外需要的套件 (在 requirements.txt 之外)
+openvino>=2025.0
+openvino-genai>=2025.0     # bench_llm.py
+optimum-intel[openvino]    # 把 Hugging Face 模型轉成 OpenVINO IR (embedding 與 LLM 都用它)
