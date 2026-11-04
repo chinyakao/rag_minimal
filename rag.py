@@ -35,6 +35,11 @@ EMBED_MODEL = os.environ.get(
 )
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-5-5")
 
+# embedding 後端: st = sentence-transformers (預設, PyTorch);
+# openvino = embed_ov.py, 可用 EMBED_DEVICE 指定 CPU / GPU / NPU
+EMBED_BACKEND = os.environ.get("EMBED_BACKEND", "st")
+EMBED_DEVICE = os.environ.get("EMBED_DEVICE", "CPU")
+
 CHUNK_SIZE = 400      # 字元數; 之後可改成 token 數並做實驗
 CHUNK_OVERLAP = 80
 TOP_K = 4
@@ -46,8 +51,12 @@ def get_model():
     """延遲載入 embedding 模型 (載入很慢, 只做一次)."""
     global _model
     if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(EMBED_MODEL)
+        if EMBED_BACKEND == "openvino":
+            from embed_ov import OVEmbedder
+            _model = OVEmbedder(EMBED_MODEL, device=EMBED_DEVICE)
+        else:
+            from sentence_transformers import SentenceTransformer
+            _model = SentenceTransformer(EMBED_MODEL)
     return _model
 
 
@@ -73,7 +82,11 @@ def chunk_text(text, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
 
 # ---------- Step 2: 嵌入與建索引 ----------
 def embed(texts):
-    vecs = get_model().encode(texts, normalize_embeddings=True)
+    model = get_model()
+    if EMBED_BACKEND == "openvino":
+        vecs = model.encode(texts)  # 已在 embed_ov.py 內正規化
+    else:
+        vecs = model.encode(texts, normalize_embeddings=True)
     return np.asarray(vecs, dtype=np.float32)
 
 

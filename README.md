@@ -49,12 +49,15 @@ python eval.py --k8s                       # 英文 20 題 (題庫在 eval_k8s.p
 - `rag.py` 啟動時會自動讀取同資料夾的 `.env` (由 python-dotenv 處理); 沒有 `.env` 時 `--no-llm` 模式仍可使用.
 - 金鑰外洩時, 到 Console 刪除並重建.
 
-第一次執行會下載 embedding 模型, 需要網路. 可用環境變數 `EMBED_MODEL`, `LLM_MODEL` 替換模型.
+第一次執行會下載 embedding 模型, 需要網路. 可用環境變數 `EMBED_MODEL`, `LLM_MODEL` 替換模型;
+`EMBED_BACKEND=openvino` 與 `EMBED_DEVICE=CPU|GPU|NPU` 切換到 OpenVINO 後端.
 
 ## 檔案說明
 
 - `rag.py`: 索引, 檢索, 生成的主程式
 - `eval.py`: hit@k 檢索評估
+- `embed_ov.py`: OpenVINO embedding 後端 (CPU / GPU / NPU), `EMBED_BACKEND=openvino` 時使用
+- `bench/`: CPU / GPU / NPU 效能與功耗 benchmark (見下方「在 CPU / GPU / NPU 上跑」)
 - `data/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DATA_DIR` 指定其他資料夾)
 - `docs/`: GitHub Pages 要發布的網頁檔案 (`index.html` 英文版, `zh.html` 繁體中文版, `og-image.png` 分享預覽圖)
 - `scripts/fetch_wiki_artists.py`: 下載 20 位藝人的維基條目並轉成 Markdown
@@ -142,6 +145,65 @@ python eval.py --k8s                       # 英文 20 題 (題庫在 eval_k8s.p
 2. 加入 BM25 並用 RRF 融合 (第 2 週).
 3. 試不同 `CHUNK_SIZE` 與 `CHUNK_OVERLAP`.
 4. 把簡體檔名 `刘若英.md` 與內容統一成繁體, 確認簡繁差異的影響.
+
+## 在 CPU / GPU / NPU 上跑 (OpenVINO) 與效能比較
+
+目標: 同一個 embedding 模型 (與一個小型 LLM) 分別跑在 Intel Meteor Lake 筆電的 CPU, 內顯 (GPU) 與 NPU,
+比較速度, 功耗與結果是否一致. NPU 驅動安裝與功耗量測方法的筆記放在
+[linux-platform-enablement](https://github.com/chinyakao/linux-platform-enablement).
+
+### 前置條件 (Linux)
+
+- kernel 6.8 以上 (內建 `intel_vpu` 驅動), 安裝 [intel/linux-npu-driver](https://github.com/intel/linux-npu-driver) Release 的 user-space 套件.
+- `/dev/accel/accel0` 存在, 帳號在 `render` 群組 (`sudo usermod -aG render $USER` 後重新登入).
+- GPU 需要 Intel compute runtime (`intel-opencl-icd` 或 Release 的 .deb).
+- 確認 OpenVINO 看得到三個裝置: `python embed_ov.py` 應列出 `CPU`, `GPU`, `NPU`.
+
+```bash
+pip install -r requirements.txt -r bench/requirements-bench.txt
+python embed_ov.py                                        # 列出可用裝置
+
+# rag.py 改用 OpenVINO 後端 (第一次會把模型轉成 IR, 存到 ov_models/)
+EMBED_BACKEND=openvino EMBED_DEVICE=NPU python rag.py index
+EMBED_BACKEND=openvino EMBED_DEVICE=NPU python eval.py    # hit@3 應與 PyTorch 版本相同或幾乎相同
+```
+
+注意: 建索引與查詢要用同一個後端 (向量來自同一個模型, 但不同裝置的數值有微小差異).
+
+### Embedding benchmark (`bench/bench_embed.py`)
+
+```bash
+python bench/bench_embed.py                               # st-CPU (PyTorch 基準), CPU, GPU, NPU
+python bench/bench_embed.py --devices NPU --no-cache      # 量 NPU 冷啟動編譯時間
+```
+
+量測: 編譯時間, 建索引吞吐量 (chunks/s, batch 8), 單筆查詢延遲 p50/p95 (batch 1), 與 PyTorch 向量的 cosine,
+以及 RAPL 平均功率, 每個 chunk 的能量 (J/chunk) 和 NPU 使用率. 結果存在 `bench/results/*.jsonl` (不進版控).
+
+NPU 只支援靜態形狀, 所以 OpenVINO 後端一律用固定的 `[batch, 128]` 輸入 (128 是此模型的 max_seq_length),
+三個裝置用同樣形狀才公平.
+
+### 小型 LLM benchmark (`bench/bench_llm.py`)
+
+```bash
+optimum-cli export openvino -m Qwen/Qwen2.5-1.5B-Instruct \
+    --weight-format int4 --sym --group-size -1 --ratio 1.0 ov_models/qwen2.5-1.5b-int4
+python bench/bench_llm.py --model ov_models/qwen2.5-1.5b-int4
+```
+
+用 `rag.py` 真正檢索出的 RAG prompt, 量載入時間, TTFT (prefill), 每個 token 時間 (decode), tokens/s 與 J/token.
+
+### 功耗量測的權限
+
+`bench/power.py` 讀 `/sys/class/powercap/intel-rapl:*/energy_uj` (package 包含 CPU, iGPU 與 NPU)
+和 `/sys/class/accel/accel0/device/npu_busy_time_us`. 多數發行版 `energy_uj` 只有 root 可讀, 兩種做法:
+
+```bash
+sudo -E .venv/bin/python bench/bench_embed.py              # 直接用 root 跑
+sudo chmod o+r /sys/class/powercap/intel-rapl:*/energy_uj # 暫時開放讀取 (重開機後恢復)
+```
+
+讀不到時 benchmark 照常跑, 只是沒有功耗欄位. 量測時請接上電源, 關掉其他程式, 每個裝置之間有冷卻時間.
 
 ## 已知限制 (就是之後要改進的地方)
 

@@ -10,3 +10,8 @@ data/*
 !data/.gitkeep
 
 # Kubernetes 文件 (CC BY 4.0) 同樣不進版控, 用 scripts/fetch_k8s_docs.py 下載到 data/k8s/
+
+# OpenVINO IR 與編譯快取 (可重建)
+ov_models/
+ov_cache/
+bench/results/
