@@ -1,10 +1,12 @@
 .env
 .venv/
 __pycache__/
-index.npz
-chunks.json
+index*.npz
+chunks*.json
 .DS_Store
 
 # 維基資料集不進版控 (CC BY-SA), 用 scripts/fetch_wiki_artists.py 下載
 data/*
 !data/.gitkeep
+
+# Kubernetes 文件 (CC BY 4.0) 同樣不進版控, 用 scripts/fetch_k8s_docs.py 下載到 data/k8s/

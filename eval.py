@@ -4,6 +4,7 @@
     python eval.py            # 只評估檢索 (不呼叫 LLM, 不花 API 費用), k=3
     python eval.py 5          # 改用 k=5
     python eval.py --llm      # 另外呼叫 LLM, 檢查 refuse 類題目是否拒答
+    python eval.py --k8s      # 英文 Kubernetes 語料與題庫 (eval_k8s.py), 可與上面參數併用
 
 欄位說明:
     type             題型 (single / multi_para / cross / reasoning / boundary)
@@ -12,7 +13,14 @@
                      manual = 需人工看回答 (例如全庫統計題, 或資料只有部分資訊)
     note             備註, 只在輸出中顯示
 """
+import os
 import sys
+from pathlib import Path
+
+# --k8s: 改用英文 Kubernetes 語料與題庫; DATA_DIR 要在 import rag 之前設定
+USE_K8S = "--k8s" in sys.argv
+if USE_K8S:
+    os.environ["DATA_DIR"] = str(Path(__file__).parent / "data" / "k8s")
 
 from rag import retrieve
 
@@ -103,7 +111,9 @@ def run(k=3, use_llm=False):
     by_type = {}
     refuse_total = refuse_ok = 0
 
-    for item in EVAL_SET:
+    if USE_K8S:
+        from eval_k8s import EVAL_SET_K8S
+    for item in (EVAL_SET_K8S if USE_K8S else EVAL_SET):
         results = retrieve(item["q"], k=k)
         sources = [r["source"] for _, r in results]
         top1 = results[0][0]

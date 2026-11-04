@@ -24,8 +24,10 @@ except ImportError:
     pass
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", HERE / "data"))  # 可用環境變數 DATA_DIR 切換資料集
-INDEX_FILE = HERE / "index.npz"
-CHUNKS_FILE = HERE / "chunks.json"
+# 每個資料集各自一份索引, 切換 DATA_DIR 不會互相覆蓋 (預設的 data/ 沿用原本檔名)
+_SUFFIX = "" if DATA_DIR.resolve() == (HERE / "data").resolve() else f"_{DATA_DIR.name}"
+INDEX_FILE = HERE / f"index{_SUFFIX}.npz"
+CHUNKS_FILE = HERE / f"chunks{_SUFFIX}.json"
 
 # 多語言模型, 中英文皆可; 可用環境變數替換
 EMBED_MODEL = os.environ.get(
