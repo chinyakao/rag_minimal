@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>學習筆記：RAG 跑在 NPU 上</title>
+<meta name="description" content="同一個 embedding 模型與小型 LLM，分別跑在 CPU、GPU、NPU，比較速度與功耗。從模型、OpenVINO 到量測方法的完整筆記。">
+<link rel="canonical" href="https://chinyakao.github.io/rag_minimal/notes/npu.html">
+<style>
+:root {
+  --bg:#fafaf7; --fg:#1f2328; --muted:#5b636b; --line:#e3e1da; --card:#ffffff;
+  --accent:#2f6f5e; --ok:#2f6f5e; --okbg:#e3f0ea; --miss:#a8472f; --missbg:#f7e6e0;
+  --manual:#8a6d1f; --manualbg:#f6efd8; --refuse:#2f5f8a; --refusebg:#e1ecf6; --code:#f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+    --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+    --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+  --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+  --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:720px; margin:0 auto; padding:48px 16px 80px; }
+h1 { font-size:2rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.3rem; margin:48px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+p, li { font-size:1.02rem; }
+.sub { color:var(--muted); margin:0 0 28px; }
+.kpi { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0; }
+.kpi div { flex:1 1 150px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.kpi b { display:block; font-size:1.8rem; line-height:1.2; }
+.kpi span { color:var(--muted); font-size:.9rem; }
+.bar { display:flex; align-items:center; gap:10px; margin:8px 0; }
+.bl { width:6.5em; font-size:.92rem; color:var(--muted); }
+.track { flex:1; height:14px; background:var(--line); border-radius:7px; overflow:hidden; }
+.track i { display:block; height:100%; background:var(--accent); border-radius:7px; }
+.bv { width:2.6em; text-align:right; font-variant-numeric:tabular-nums; font-size:.92rem; }
+ul.grid { list-style:none; padding:0; margin:16px 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+.cell { border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; font-size:.82rem; border:1px solid transparent; }
+.cell b { font-size:1rem; }
+.cell.ok { background:var(--okbg); color:var(--ok); }
+.cell.miss { background:var(--missbg); color:var(--miss); }
+.cell.manual { background:var(--manualbg); color:var(--manual); }
+.cell.refuse { background:var(--refusebg); color:var(--refuse); }
+.legend { color:var(--muted); font-size:.88rem; }
+code { background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em; }
+pre { background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:.88rem; line-height:1.6; }
+pre code { background:none; padding:0; }
+.note { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:8px; padding:12px 16px; margin:16px 0; }
+.tag { color:var(--manual); font-size:.85rem; }
+footer { margin-top:56px; color:var(--muted); font-size:.88rem; }
+@media (max-width:480px) { h1 { font-size:1.6rem; } .bl { width:5.5em; } }
+
+.lang { text-align:right; font-size:.9rem; margin-bottom:8px; }
+.lang a { color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; }
+.lang a:hover { border-color:var(--accent); }
+
+table { width:100%; border-collapse:collapse; margin:16px 0; font-size:.92rem; display:block; overflow-x:auto; }
+th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+th { color:var(--muted); font-weight:600; white-space:nowrap; }
+td.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+h3 { font-size:1.08rem; margin:28px 0 8px; }
+.toc { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 20px; margin:24px 0; }
+.toc ol { margin:6px 0; padding-left:1.4em; } .toc a { color:var(--accent); text-decoration:none; }
+figure { margin:20px 0; } figure svg { width:100%; height:auto; display:block; }
+figcaption { color:var(--muted); font-size:.88rem; margin-top:6px; }
+.bar .bl { width:8.5em; } .bv { width:4.5em; }
+a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<nav class="lang"><a href="../zh.html">回到 RAG 學習日誌</a></nav>
+<h1>學習筆記：讓 RAG 跑在 NPU 上</h1>
+<p class="sub">同一個 embedding 模型與小型 LLM，分別跑在 Meteor Lake 筆電的 CPU、GPU、NPU，比較速度與功耗。寫給未來忘記細節的自己。2026-11-06</p>
+
+<div class="kpi">
+  <div><b>6.1x</b><span>GPU 建索引速度（相對 PyTorch CPU）</span></div>
+  <div><b>9.6 W</b><span>NPU 建索引功率（GPU 26 W，CPU 43 W）</span></div>
+  <div><b>0.72</b><span>hit@3，CPU 與 NPU 完全相同</span></div>
+</div>
+
+<nav class="toc"><b>目錄</b><ol>
+<li><a href="#basics">從零開始：模型是什麼</a></li>
+<li><a href="#rag">RAG 裡的兩種模型</a></li>
+<li><a href="#stack">Hugging Face、PyTorch、Optimum、OpenVINO</a></li>
+<li><a href="#chips">CPU、GPU、NPU 差在哪</a></li>
+<li><a href="#setup">環境準備</a></li>
+<li><a href="#run">實際操作：每個指令在做什麼</a></li>
+<li><a href="#embed">結果一：embedding</a></li>
+<li><a href="#llm">結果二：小型 LLM</a></li>
+<li><a href="#which">什麼工作交給哪個晶片</a></li>
+<li><a href="#pitfalls">踩過的坑</a></li>
+<li><a href="#glossary">名詞對照表</a></li>
+<li><a href="#next">下一步</a></li>
+</ol></nav>
+
+<h2 id="basics">1. 從零開始：模型是什麼</h2>
+<p>模型就是一份<b>寫死的計算食譜</b>加上<b>一大堆數字</b>。輸入的文字先轉成數字，照食譜做幾億次乘法和加法，輸出另一串數字。</p>
+<ul>
+<li><b>權重（weights）</b>：食譜裡那堆數字，是訓練時學出來的。這次的 embedding 模型約 1.2 億個（檔案 471 MB），Qwen2.5-1.5B 約 15 億個。</li>
+<li><b>推論（inference）</b>：拿訓練好的模型算新的輸入。這次只做推論，不訓練。</li>
+<li><b>token</b>：模型處理文字的最小單位，大約是英文字的一部分或一個中文字。</li>
+</ul>
+<div class="note">推論的本質是「大量、重複、可以同時做的乘加法」。哪種晶片擅長同時做很多簡單運算，就會算得快又省電。這是整個實驗的出發點。</div>
+
+<h2 id="rag">2. RAG 裡的兩種模型</h2>
+<p>RAG（檢索增強生成）= 先從資料裡找出相關段落，再請語言模型根據這些段落回答。它用到兩種模型：</p>
+<table>
+<tr><th></th><th>Embedding 模型</th><th>LLM（大型語言模型）</th></tr>
+<tr><td>這次用的</td><td>paraphrase-multilingual-MiniLM-L12-v2</td><td>Qwen2.5-1.5B-Instruct（int4）</td></tr>
+<tr><td>輸入 → 輸出</td><td>一段文字 → 384 個數字（向量）</td><td>問題 + 參考段落 → 一個字一個字產生的回答</td></tr>
+<tr><td>比喻</td><td>圖書館員，把每本書的「意思」編成一個座標</td><td>寫作者，讀完資料後寫出答案</td></tr>
+<tr><td>在 RAG 裡的工作</td><td>建索引，以及每次查詢時轉換問題</td><td>最後產生答案</td></tr>
+</table>
+<p><b>向量怎麼找資料</b>：意思接近的文字，向量也接近。「NPU 驅動修正」和「accel/ivpu: fix ...」的向量會靠得很近。所以找資料 = 把問題轉成向量，再找距離最近的 chunk。</p>
+<ol>
+<li><b>切塊</b>：18 個版本的 kernel changelog 切成 3588 個 chunk（每塊約 400 字元）。</li>
+<li><b>建索引</b>：embedding 模型把每個 chunk 轉成向量，存成 <code>index.npz</code>。要算 3588 次，最吃重。</li>
+<li><b>查詢</b>：問題也轉成向量（算 1 次），找出最接近的 4 個 chunk。</li>
+<li><b>生成</b>：問題 + 4 個 chunk 組成 prompt，交給 LLM 寫答案。</li>
+</ol>
+<p>第 2、3 步是 embedding benchmark 量的；第 4 步是 LLM benchmark 量的。</p>
+
+<h2 id="stack">3. Hugging Face、PyTorch、Optimum、OpenVINO</h2>
+<table>
+<tr><th>角色</th><th>是什麼</th><th>比喻</th></tr>
+<tr><td>Hugging Face</td><td>放開源模型的網站，也出 <code>transformers</code>、<code>sentence-transformers</code>、<code>optimum</code> 等 Python 套件</td><td>食譜圖書館</td></tr>
+<tr><td>PyTorch</td><td>Meta 的 AI 框架，真正執行模型運算；Hugging Face 上多數模型是它的格式</td><td>通用廚房</td></tr>
+<tr><td>Optimum（optimum-intel）</td><td>Hugging Face 的轉換工具，把 PyTorch 格式轉成 OpenVINO 格式；<code>optimum-cli</code> 是它的指令</td><td>翻譯官</td></tr>
+<tr><td>OpenVINO</td><td>Intel 的推論工具，為 Intel CPU / GPU / NPU 最佳化。PyTorch 不支援 NPU，所以要用它</td><td>Intel 專用廚房</td></tr>
+</table>
+<figure>
+<svg viewBox="0 0 760 264" role="img" aria-label="同一個模型的兩條路" font-size="13" font-family="inherit">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+<text x="16" y="24" font-size="15" font-weight="600" fill="var(--fg)">同一個模型的兩條路：PyTorch 只用 CPU，OpenVINO 三種都能用</text>
+<g fill="none" stroke="var(--muted)" stroke-width="1.25">
+<rect x="16" y="116" width="140" height="56" rx="8"/>
+<rect x="200" y="44" width="176" height="56" rx="8"/><rect x="416" y="44" width="140" height="56" rx="8"/>
+<rect x="200" y="172" width="176" height="56" rx="8"/><rect x="416" y="172" width="140" height="56" rx="8"/>
+<rect x="616" y="52" width="128" height="40" rx="8"/>
+<rect x="616" y="132" width="128" height="36" rx="8"/><rect x="616" y="178" width="128" height="36" rx="8"/>
+<path d="M156 144H178V72H200" marker-end="url(#ar)"/><path d="M156 144H178V200H200" marker-end="url(#ar)"/>
+<path d="M376 72H416" marker-end="url(#ar)"/><path d="M376 200H416" marker-end="url(#ar)"/>
+<path d="M556 72H616" marker-end="url(#ar)"/>
+<path d="M556 200H586V150H616" marker-end="url(#ar)"/><path d="M586 200V196H616" marker-end="url(#ar)"/><path d="M586 200V242H616" marker-end="url(#ar)"/>
+</g>
+<rect x="616" y="224" width="128" height="36" rx="8" fill="var(--okbg)" stroke="var(--accent)" stroke-width="2"/>
+<g fill="var(--fg)" text-anchor="middle">
+<text x="86" y="140" font-weight="600">Hugging Face</text><text x="86" y="158" font-size="11.5" fill="var(--muted)">模型（PyTorch 格式）</text>
+<text x="288" y="68" font-weight="600">sentence-transformers</text><text x="288" y="86" font-size="11.5" fill="var(--muted)">原本的路（基準）</text>
+<text x="486" y="68" font-weight="600">PyTorch</text><text x="486" y="86" font-size="11.5" fill="var(--muted)">通用框架</text>
+<text x="288" y="196" font-weight="600">optimum-intel 轉換</text><text x="288" y="214" font-size="11.5" fill="var(--muted)">存到 ov_models/</text>
+<text x="486" y="196" font-weight="600">OpenVINO 編譯</text><text x="486" y="214" font-size="11.5" fill="var(--muted)">快取在 ov_cache/</text>
+<text x="680" y="76">CPU</text><text x="680" y="155">CPU</text><text x="680" y="201">GPU</text><text x="680" y="247" font-weight="600">NPU</text>
+</g>
+</svg>
+<figcaption>benchmark 裡的「PyTorch CPU」走上面那條路，用來當基準；另外三個（OpenVINO CPU / GPU / NPU）走下面那條。</figcaption>
+</figure>
+<h3>OpenVINO 的三個步驟</h3>
+<ol>
+<li><b>轉換（只做一次）</b>：Hugging Face 的 PyTorch 模型 NPU 看不懂。<code>optimum-intel</code> 把它轉成 OpenVINO 的 IR 格式（<code>.xml</code> 描述食譜、<code>.bin</code> 放數字），存在 <code>ov_models/</code>。embedding 模型由 <code>embed_ov.py</code> 自動轉；LLM 用 <code>optimum-cli</code> 手動轉。</li>
+<li><b>編譯（每種晶片一次）</b>：OpenVINO 把 IR 編譯成某種晶片的程式。NPU 這步特別久，結果快取在 <code>ov_cache/</code>，下次直接用：所以 NPU 的 <code>compile_s</code> 只要 0.19 秒。</li>
+<li><b>執行</b>：編譯好的程式透過驅動送進晶片。NPU 的路徑是 OpenVINO → Level Zero → <code>intel_vpu</code> kernel 驅動 → <code>/dev/accel/accel0</code>。</li>
+</ol>
+<p><code>ov_models/</code> 和 <code>ov_cache/</code> 都在 <code>.gitignore</code> 裡，刪掉也只是下次重新產生。</p>
+
+<h2 id="chips">4. CPU、GPU、NPU 差在哪</h2>
+<p>Core Ultra 7 155H 是一顆 SoC，三種運算單元在同一顆晶片裡，共用記憶體和電源。</p>
+<table>
+<tr><th></th><th>CPU</th><th>GPU（內顯）</th><th>NPU（Intel AI Boost）</th></tr>
+<tr><td>比喻</td><td>幾位萬能的資深工程師</td><td>一大群工讀生，同時做簡單的事</td><td>專門做矩陣乘法的機器</td></tr>
+<tr><td>擅長</td><td>什麼都能做、邏輯複雜的工作</td><td>大量平行運算（畫面、AI）</td><td>只做 AI 推論，但很省電</td></tr>
+<tr><td>限制</td><td>同時做的事少，算 AI 耗電</td><td>功耗中等</td><td>不能跑一般程式；只吃<b>固定大小</b>的輸入</td></tr>
+</table>
+<p><b>固定大小（靜態形狀）</b>是 NPU 的重要限制：所以 embedding 一律把每段文字補或切成 128 個 token、一次送 8 段（查詢時送 1 段）。為了公平，CPU 和 GPU 也用同樣的形狀。LLM 則要事先告訴 NPU prompt 最長多少（<code>MAX_PROMPT_LEN=2048</code>）。</p>
+
+<h2 id="setup">5. 環境準備</h2>
+<p>詳細步驟在 <a href="https://chinyakao.github.io/client-linux-notes/zh/platform/intel-npu.html">client-linux-notes 的 NPU 筆記</a>，重點：</p>
+<ul>
+<li>kernel 6.8 以上就有 <code>intel_vpu</code> 驅動（這次是 7.0），會產生 <code>/dev/accel/accel0</code>。</li>
+<li>從 <a href="https://github.com/intel/linux-npu-driver/releases">intel/linux-npu-driver</a> 裝 user-space 套件：<code>intel-driver-compiler-npu</code>、<code>intel-fw-npu</code>、<code>intel-level-zero-npu</code>、<code>libze1</code>。</li>
+<li>帳號加入 <code>render</code> 群組才能打開 accel0（<code>sudo usermod -aG render $USER</code>，重新登入）。</li>
+<li>GPU 需要 <code>intel-opencl-icd</code>。</li>
+<li><code>./tools/npu/check_npu.sh</code> 一次檢查全部；最後應看到 OpenVINO 列出 CPU、GPU、NPU 三個裝置。</li>
+</ul>
+
+<h2 id="run">6. 實際操作：每個指令在做什麼</h2>
+<pre><code>pip install -r requirements.txt -r bench/requirements-bench.txt
+
+# 資料：Ubuntu linux-oem-7.0 kernel changelog，每個版本一個檔
+python scripts/fetch_oem_changelog.py                 # -> data/oem-7.0/
+
+# 準確度（eval 會用索引）
+DATA_DIR=data/oem-7.0 python rag.py index            # PyTorch 建索引
+python eval.py --oem                                   # 20 題 kernel 題庫的 hit@3
+DATA_DIR=data/oem-7.0 EMBED_BACKEND=openvino EMBED_DEVICE=NPU python rag.py index
+EMBED_BACKEND=openvino EMBED_DEVICE=NPU python eval.py --oem
+
+# 速度與功耗（bench 不用索引，自己跑四種裝置）
+DATA_DIR=data/oem-7.0 sudo -E .venv/bin/python bench/bench_embed.py
+
+# 小型 LLM
+optimum-cli export openvino -m Qwen/Qwen2.5-1.5B-Instruct \
+  --weight-format int4 --sym --group-size -1 --ratio 1.0 ov_models/qwen2.5-1.5b-int4
+DATA_DIR=data/oem-7.0 python bench/bench_llm.py --model ov_models/qwen2.5-1.5b-int4 --devices NPU --repeat 1
+DATA_DIR=data/oem-7.0 sudo -E .venv/bin/python bench/bench_llm.py --model ov_models/qwen2.5-1.5b-int4</code></pre>
+<h3>eval 和 bench 的差別</h3>
+<ul>
+<li><b>eval 量準不準</b>：用索引搜尋 20 個問題，看正確版本有沒有在前 3 名（hit@3）。索引是哪個裝置建的，量到的就是那個裝置的準確度，所以 NPU 要重建索引再跑一次。</li>
+<li><b>bench 量快不快、耗不耗電</b>：不讀索引，直接拿 <code>chunks.json</code> 的文字，自己把四種裝置都跑一輪。</li>
+</ul>
+<h3>bench_embed.py 對每個裝置做的事</h3>
+<ol>
+<li>量閒置功耗 5 秒（晶片本來就會花的電，約 2.6 W）。</li>
+<li>載入與編譯，計時 = <code>compile_s</code>。</li>
+<li>建索引測試：256 個 chunk、一次 8 個，重複至少 10 秒 → 每秒幾個（<code>index_cps</code>）與功耗。</li>
+<li>比對答案：和 PyTorch 算的向量比 cosine（1.0 = 完全一樣）。</li>
+<li>查詢延遲：一次 1 個問題，重複 200 次 → p50 / p95。</li>
+<li>休息 5 秒換下一個裝置，讓溫度回落。</li>
+</ol>
+<h3>為什麼有時要 sudo、有時不用</h3>
+<p>跑 NPU 不需要 root（帳號在 render 群組就夠）。<b>只有讀功耗要 root</b>：RAPL 是 Intel 晶片內建的電表，<code>/sys/class/powercap/intel-rapl:*/energy_uj</code> 預設只有 root 能讀。程式在測試前後各讀一次累積焦耳數，相減除以時間就是平均瓦數。NPU 另有 <code>npu_busy_time_us</code> 計數器，用來證明工作真的在 NPU 上。</p>
+<p>試跑（只是確認能動、先把 NPU 編譯快取建好）不需要功耗，所以不加 sudo；正式量測才加。</p>
+
+<h2 id="embed">7. 結果一：embedding</h2>
+<p>3588 個 chunk 的 kernel changelog，固定輸入 [8, 128]，每項至少 10 秒。閒置 package 功率 2.6 W。</p>
+<table>
+<tr><th>裝置</th><th>建索引 chunks/s</th><th>查詢 p50</th><th>Package 功率</th><th>J/chunk（扣閒置）</th><th>NPU 使用率</th></tr>
+<tr><td>PyTorch CPU</td><td class="n">48.8</td><td class="n">12.2 ms</td><td class="n">43.0 W</td><td class="n">0.83</td><td class="n">0%</td></tr>
+<tr><td>OpenVINO CPU</td><td class="n">40.7</td><td class="n">24.7 ms</td><td class="n">32.3 W</td><td class="n">0.73</td><td class="n">0%</td></tr>
+<tr><td>OpenVINO GPU</td><td class="n"><b>299</b></td><td class="n">12.3 ms</td><td class="n">26.4 W</td><td class="n">0.080</td><td class="n">0%</td></tr>
+<tr><td>OpenVINO NPU</td><td class="n">114</td><td class="n"><b>7.6 ms</b></td><td class="n"><b>9.6 W</b></td><td class="n"><b>0.062</b></td><td class="n">94%</td></tr>
+</table>
+<p><b>建索引功率（W，越短越省電）</b></p>
+<div>
+<div class="bar"><span class="bl">PyTorch CPU</span><div class="track"><i style="width:100%"></i></div><span class="bv">43.0</span></div>
+<div class="bar"><span class="bl">OpenVINO CPU</span><div class="track"><i style="width:75%"></i></div><span class="bv">32.3</span></div>
+<div class="bar"><span class="bl">OpenVINO GPU</span><div class="track"><i style="width:61%"></i></div><span class="bv">26.4</span></div>
+<div class="bar"><span class="bl">OpenVINO NPU</span><div class="track"><i style="width:22%"></i></div><span class="bv">9.6</span></div>
+</div>
+<h3>怎麼讀</h3>
+<ul>
+<li><b>快（每秒幾個）和省電（幾瓦）是兩件事</b>：GPU 每秒做的工是 NPU 的 2.6 倍，但功率也是 2.7 倍。</li>
+<li><b>「每個 chunk 花多少焦耳」最公平</b>：把快和省電合在一起看，等於「同一份工作，電池掉多少」。NPU 比 GPU 少約 22%，比 CPU 少約 13 倍。</li>
+<li><b>NPU 單筆查詢最快</b>（7.6 ms），一問一答時使用者感受到的是這個。</li>
+<li><b>工作真的在 NPU 上</b>：NPU 使用率 94%，同時 CPU core 功率只有 0.7 W。</li>
+<li><b>準確度沒變</b>：向量 cosine ≥ 0.999996；PyTorch 索引和 NPU 索引的 hit@3 都是 13/18 = 0.72，每題命中結果相同。</li>
+</ul>
+
+<h2 id="llm">8. 結果二：小型 LLM</h2>
+<p>Qwen2.5-1.5B int4，3 個 kernel 問題，每題的 RAG prompt 平均 781 個輸入 token，固定生成 128 個 token，每題跑 2 次。閒置 package 功率 3.3 W。</p>
+<table>
+<tr><th>裝置</th><th>第一個字（TTFT）</th><th>之後每秒 token</th><th>每題總時間</th><th>Package 功率</th><th>每題能量（扣閒置）</th></tr>
+<tr><td>CPU</td><td class="n">2.61 s</td><td class="n"><b>41.6</b></td><td class="n">5.7 s</td><td class="n">30.5 W</td><td class="n">155 J</td></tr>
+<tr><td>GPU</td><td class="n"><b>0.50 s</b></td><td class="n">33.7</td><td class="n"><b>4.3 s</b></td><td class="n">21.8 W</td><td class="n">79 J</td></tr>
+<tr><td>NPU</td><td class="n">1.85 s</td><td class="n">21.6</td><td class="n">7.7 s</td><td class="n"><b>12.2 W</b></td><td class="n"><b>69 J</b></td></tr>
+</table>
+<h3>LLM 的兩個階段</h3>
+<ul>
+<li><b>Prefill（讀 prompt）</b>：781 個 token 可以一次平行算完，是「算力」比賽 → GPU 最快（比 NPU 快 3.7 倍）。量的是 TTFT（第一個字出來要多久）。</li>
+<li><b>Decode（逐字生成）</b>：每生成一個 token 都要把整個模型從記憶體讀一次，是「記憶體頻寬」比賽 → CPU 反而最快。量的是 tokens/s。</li>
+</ul>
+<p>整體回答 GPU 最快；NPU 最慢，但功率只有 GPU 的 56%，每題能量還少約 13%。CPU 每題能量約是另外兩者的兩倍。</p>
+<div class="note">回答品質不是這次的重點：1.5B 模型在 CVE 題目上前後矛盾，還輸出簡體中文。這份量測只比速度與功耗。</div>
+
+<h2 id="which">9. 什麼工作交給哪個晶片</h2>
+<table>
+<tr><th>工作</th><th>建議</th><th>原因</th></tr>
+<tr><td>一次建大量索引</td><td>GPU</td><td>吞吐量是 NPU 的 2.6 倍</td></tr>
+<tr><td>一問一答的查詢 embedding</td><td>NPU</td><td>最快（7.6 ms）且功率最低</td></tr>
+<tr><td>LLM 回答，要快</td><td>GPU</td><td>prefill 快，總時間最短</td></tr>
+<tr><td>LLM 回答，要省電或背景執行</td><td>NPU</td><td>功率最低，不佔用 CPU 和 GPU</td></tr>
+</table>
+
+<h2 id="pitfalls">10. 踩過的坑</h2>
+<h3>1. 檢查腳本誤報驅動沒載入</h3>
+<p><code>lsmod | grep -q intel_vpu</code> 在 <code>set -o pipefail</code> 下會誤判：<code>grep -q</code> 找到就提早結束，<code>lsmod</code> 收到 SIGPIPE，整條 pipeline 被當成失敗。改成檢查 <code>/sys/module/intel_vpu</code> 是否存在。</p>
+<h3>2. KeyError: 'token_type_ids'</h3>
+<p>這個多語言模型用 XLM-R 的 tokenizer，不產生 <code>token_type_ids</code>，但轉出來的 OpenVINO 模型仍要這個輸入。單句輸入時它本來就全是 0，補 0 即可。雲端測試用的小 BERT 模型剛好有產生，所以沒抓到：<b>測試要用真的模型</b>。</p>
+<h3>3. sudo 留下 root 的檔案</h3>
+<p>用 sudo 跑過一次後，<code>bench/results/</code>、<code>ov_models/</code>、<code>ov_cache/</code> 變成 root 所有，下次不加 sudo 就 PermissionError。現在程式結束時會用 <code>SUDO_UID</code> 自動把擁有者改回來。</p>
+<h3>4. CPU 提早結束，數字不公平</h3>
+<p>第一次跑 LLM 時 CPU 平均只生成 45 個 token 就停了（不同裝置數值有微小差異，模型在不同地方決定結束）。讀 prompt 的能量是固定的，回答越短，平均到每個 token 越多，CPU 的 J/token 被灌水成 2.77。改成 <code>ignore_eos</code>，固定生成 128 個之後是 1.36。<b>比較效能時，工作量要完全一樣</b>。</p>
+<h3>5. 尚未解決：OpenVINO CPU 比 PyTorch 慢</h3>
+<p>猜測：OpenVINO 每段都補滿 128 token，PyTorch 只補到該 batch 最長；另外 OpenVINO CPU 預設是低延遲模式。待驗證。</p>
+<h3>6. eval 漏掉的題目與裝置無關</h3>
+<p>5 題 MISS 在 CPU 和 NPU 上完全一樣，是檢索方法的問題：版本號只寫在檔案開頭，長版本中間切出來的 chunk 不知道自己屬於哪一版。</p>
+
+<h2 id="glossary">11. 名詞對照表</h2>
+<table>
+<tr><th>名詞</th><th>白話解釋</th></tr>
+<tr><td>模型 / 權重</td><td>計算食譜 + 訓練好的一大堆數字</td></tr>
+<tr><td>推論（inference）</td><td>拿模型算新的輸入，不學新東西</td></tr>
+<tr><td>token</td><td>模型處理文字的最小單位</td></tr>
+<tr><td>embedding / 向量</td><td>把一段文字變成一串數字，意思近的數字也近</td></tr>
+<tr><td>chunk</td><td>文件切出來的一小段（這裡約 400 字元）</td></tr>
+<tr><td>索引（index）</td><td>所有 chunk 的向量，存在 <code>index.npz</code></td></tr>
+<tr><td>LLM</td><td>會寫文字的大型語言模型，例如 Qwen、Claude</td></tr>
+<tr><td>RAG</td><td>先找資料，再請 LLM 根據資料回答</td></tr>
+<tr><td>IR</td><td>OpenVINO 的模型格式（.xml + .bin），存在 <code>ov_models/</code></td></tr>
+<tr><td>int4 量化</td><td>每個權重從 16 位元壓成 4 位元，變小變快，稍微損失精度</td></tr>
+<tr><td>靜態形狀</td><td>輸入大小固定，NPU 的要求</td></tr>
+<tr><td>RAPL</td><td>Intel 晶片內建的電表，讀它要 root</td></tr>
+<tr><td>hit@3</td><td>正確答案的文件有沒有出現在搜尋結果前 3 名</td></tr>
+<tr><td>TTFT</td><td>從收到問題到吐出第一個字的時間（prefill）</td></tr>
+<tr><td>tokens/s</td><td>之後每秒生成幾個 token（decode）</td></tr>
+</table>
+
+<h2 id="next">12. 下一步</h2>
+<ol>
+<li>每個 chunk 前面加上版本號，看「哪個版本」類題目的 hit@3 會不會變好。</li>
+<li>查 OpenVINO CPU 變慢的原因（動態長度、<code>PERFORMANCE_HINT=THROUGHPUT</code>）。</li>
+<li>embedding 試更大的 batch，看 NPU 和 GPU 的差距會不會改變。</li>
+<li>量冷啟動：<code>--no-cache</code> 看 NPU 第一次編譯要多久。</li>
+</ol>
+
+<footer>
+個人學習筆記。程式在 <a href="https://github.com/chinyakao/rag_minimal">rag_minimal</a> 的 <code>embed_ov.py</code> 與 <code>bench/</code>；驅動與量測方法在 <a href="https://github.com/chinyakao/client-linux-notes">client-linux-notes</a>。
+</footer>
+</main>
+</body>
+</html>
