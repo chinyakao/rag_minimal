@@ -39,6 +39,13 @@ DEFAULT_QUESTIONS = [
     "陳綺貞的出道專輯名稱是什麼?",
 ]
 
+# DATA_DIR 指向 OEM kernel changelog 時用的問題
+OEM_QUESTIONS = [
+    "Which kernel version fixed the upside-down front camera image?",
+    "What changes were made to the intel_vpu / NPU driver?",
+    "Which CVEs were fixed in 7.0.0-1017.17?",
+]
+
 
 def build_prompts(questions):
     prompts = []
@@ -116,12 +123,14 @@ def main():
     ap.add_argument("--idle-seconds", type=float, default=5.0)
     ap.add_argument("--cooldown", type=float, default=10.0)
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--question", action="append", help="自訂問題, 可重複; 預設依 DATA_DIR 選題")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
     meter = PowerMeter()
     print("功耗計數器:", meter.available)
-    prompts = build_prompts(DEFAULT_QUESTIONS)
+    questions = args.question or (OEM_QUESTIONS if "oem" in str(rag.DATA_DIR) else DEFAULT_QUESTIONS)
+    prompts = build_prompts(questions)
 
     meta = {"time": datetime.now().isoformat(timespec="seconds")}
     if args.idle_seconds > 0 and meter.domains:

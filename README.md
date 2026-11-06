@@ -42,6 +42,18 @@ DATA_DIR=data/k8s python rag.py ask "What is the default restartPolicy of a Pod?
 python eval.py --k8s                       # 英文 20 題 (題庫在 eval_k8s.py)
 ```
 
+### 取得資料集 (Ubuntu OEM kernel changelog)
+
+CPU / GPU / NPU benchmark 用的英文資料集. 來源是 Ubuntu `linux-oem-7.0` 套件的 `debian.oem/changelog`
+(公開 mirror), 每個版本一個檔案:
+
+```bash
+python scripts/fetch_oem_changelog.py                     # -> data/oem-7.0/linux-oem-7.0_7.0.0-10xx.xx.md
+python scripts/fetch_oem_changelog.py --min 1010 --max 1018   # 只取部分版本
+DATA_DIR=data/oem-7.0 python rag.py index
+DATA_DIR=data/oem-7.0 python rag.py ask "Which version fixed the upside-down front camera?" --no-llm
+```
+
 ### 設定金鑰 (.env)
 
 - API key 到 Claude Console (console.anthropic.com) 建立, 僅顯示一次, 請立刻存好.
@@ -61,6 +73,7 @@ python eval.py --k8s                       # 英文 20 題 (題庫在 eval_k8s.p
 - `data/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DATA_DIR` 指定其他資料夾)
 - `docs/`: GitHub Pages 要發布的網頁檔案 (`index.html` 英文版, `zh.html` 繁體中文版, `og-image.png` 分享預覽圖)
 - `scripts/fetch_wiki_artists.py`: 下載 20 位藝人的維基條目並轉成 Markdown
+- `scripts/fetch_oem_changelog.py`: 下載 Ubuntu linux-oem-7.0 kernel changelog, 每個版本 (7.0.0-1001.1 到 1018.18) 存成一個檔案到 `data/oem-7.0/`
 - `wiki_manifest.tsv`: 本專案評估所用條目的原始網址與版本連結
 - `requirements.txt`: 相依套件
 - `.env.example`: 環境變數範本 (複製為 `.env` 後填值)
