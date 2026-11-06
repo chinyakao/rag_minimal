@@ -128,6 +128,14 @@ a { color:var(--accent); }
 <li><b>生成</b>：問題 + 4 個 chunk 組成 prompt，交給 LLM 寫答案。</li>
 </ol>
 <p>第 2、3 步是 embedding benchmark 量的；第 4 步是 LLM benchmark 量的。</p>
+<h3>LLM 不建索引，那它怎麼回答？</h3>
+<p>LLM 不建索引，也不負責找資料。三者分工：</p>
+<ol>
+<li><b>embedding 模型</b>：建索引；問問題時找出最相關的 4 個 chunk。</li>
+<li><b>程式（<code>rag.py</code> 的 <code>build_prompt</code>）</b>：把這 4 段文字直接貼進 prompt，變成「根據以下資料回答：[1]…[4]… 問題：…」。</li>
+<li><b>LLM</b>：只讀這份 prompt，照著內容寫出答案。</li>
+</ol>
+<div class="note">LLM 像考試時拿到參考資料的學生：資料由檢索挑好交給它，它負責讀完寫答案。檢索沒挑對資料，LLM 再強也答不對，這就是 hit@3 要量的事。也因為 4 段資料都塞進 prompt，LLM 每次要先讀約 780 個 token，這就是第 8 節「第一個字」要等的原因。</div>
 
 <h2 id="stack">3. Hugging Face、PyTorch、Optimum、OpenVINO</h2>
 <table>
