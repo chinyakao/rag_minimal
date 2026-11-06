@@ -6,7 +6,8 @@ Used by eval.py with the --oem flag:
     python eval.py --oem 5 --llm    # k=5, also call the LLM for refuse/manual questions
 
 Same fields and type mix as eval.py / eval_k8s.py
-(single 5 / multi_para 5 / cross 5 / reasoning 3 / boundary 2).
+(single 5 / multi_para 5 / cross 5 / reasoning 3 / boundary 2),
+plus 8 paraphrase questions (#21-28) that avoid the changelog's own wording.
 Every "answer" question was checked against the changelog on 2026-11-06
 (latest version 7.0.0-1018.18).
 
@@ -105,4 +106,39 @@ EVAL_SET_OEM = [
      "q": "When will linux-oem-7.0 7.0.0-1019 be released?",
      "expected_sources": [],
      "note": "Future version, not in the data"},
+    # ---- paraphrase: same kind of facts, asked the way a user would describe the symptom.
+    # Avoids the changelog's own words (driver names, chip IDs, bug titles), so exact
+    # keyword match cannot carry the answer. Added 2026-11-06 to compare vector / bm25 / hybrid fairly.
+    {"id": 21, "type": "paraphrase", "expect": "answer",
+     "q": "My laptop webcam picture looks blurry and the colours look wrong. Which update fixed that?",
+     "expected_sources": [v("1010.10"), v("1012.12")],
+     "note": "Camera output is vague and color is abnormal (intel/ipu6 DWC PHY band selection)"},
+    {"id": 22, "type": "paraphrase", "expect": "answer",
+     "q": "The computer freezes when I power it off while a Thunderbolt dock is plugged in. Is there a fix?",
+     "expected_sources": [v("1014.14")],
+     "note": "Fix hang on shutdown with TBT3 connected (assert downstream port reset on shutdown)"},
+    {"id": 23, "type": "paraphrase", "expect": "answer",
+     "q": "On my Radeon laptop the picture gets scrambled every time I move to another virtual desktop. What was changed?",
+     "expected_sources": [v("1015.15"), v("1016.16")],
+     "note": "amdgpu: Fix garbled display when switching workspaces"},
+    {"id": 24, "type": "paraphrase", "expect": "answer",
+     "q": "Wireless cannot be turned on at all because it reports the radio is switched off by hardware. How was this solved?",
+     "expected_sources": [v("1012.12")],
+     "note": "MT7925 wifi is hard blocked (revert of rfkill_poll for hardware rfkill)"},
+    {"id": 25, "type": "paraphrase", "expect": "answer",
+     "q": "When I plug in earphones that have a microphone, the machine does not notice them. Which version fixed it?",
+     "expected_sources": [v("1017.17")],
+     "note": "Fix missing headset on some laptop models (Realtek headset mode)"},
+    {"id": 26, "type": "paraphrase", "expect": "answer",
+     "q": "After a restart I hear a crackling sound in my headphones. Was this addressed?",
+     "expected_sources": [v("1012.12"), v("1015.15")],
+     "note": "Fix noise of audio output on some laptop models after reboot"},
+    {"id": 27, "type": "paraphrase", "expect": "answer",
+     "q": "The small light on the key that silences the microphone never turns on. Which change fixed it?",
+     "expected_sources": [v("1006.6")],
+     "note": "Fix mic mute LED on HP EliteBook 6 G2a"},
+    {"id": 28, "type": "paraphrase", "expect": "answer",
+     "q": "Under heavy network load the whole system stops responding and the log shows a crash in the wireless driver. What was the fix?",
+     "expected_sources": [v("1004.4")],
+     "note": "System doesn't response with mt76 call trace (mt792x deadlock in high-load situations)"},
 ]
