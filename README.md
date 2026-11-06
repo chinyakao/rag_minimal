@@ -53,6 +53,8 @@ python scripts/fetch_oem_changelog.py --min 1010 --max 1018   # 只取部分版�
 DATA_DIR=data/oem-7.0 python rag.py index
 DATA_DIR=data/oem-7.0 python rag.py ask "Which version fixed the upside-down front camera?" --no-llm
 python eval.py --oem                                      # 20 題 kernel 題庫 (eval_oem.py)
+CHUNK_TITLE=1 DATA_DIR=data/oem-7.0 python rag.py index  # 每個 chunk 前加上標題 (版本號), 索引另存 *_title
+CHUNK_TITLE=1 python eval.py --oem                        # 與沒加標題的 hit@3 比較
 ```
 
 ### 設定金鑰 (.env)
@@ -71,7 +73,7 @@ python eval.py --oem                                      # 20 題 kernel 題庫
 - `eval.py`: hit@k 檢索評估 (`--k8s`, `--oem` 切換英文題庫)
 - `eval_oem.py`: Ubuntu linux-oem-7.0 kernel changelog 題庫 (20 題)
 - `embed_ov.py`: OpenVINO embedding 後端 (CPU / GPU / NPU), `EMBED_BACKEND=openvino` 時使用
-- `bench/`: CPU / GPU / NPU 效能與功耗 benchmark (見下方「在 CPU / GPU / NPU 上跑」)
+- `bench/`: CPU / GPU / NPU 效能與功耗 benchmark (見下方「在 CPU / GPU / NPU 上跑」); `bench/bench_ov_cpu.py` 找 OpenVINO CPU 比 PyTorch 慢的原因
 - `data/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DATA_DIR` 指定其他資料夾)
 - `docs/`: GitHub Pages 要發布的網頁檔案 (`index.html` 英文版, `zh.html` 繁體中文版, `og-image.png` 分享預覽圖)
 - `scripts/fetch_wiki_artists.py`: 下載 20 位藝人的維基條目並轉成 Markdown

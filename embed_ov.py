@@ -47,13 +47,16 @@ class OVEmbedder:
     device: "CPU" / "GPU" / "NPU" (也可用 "AUTO")
     batch:  一次推論幾筆; 不足時以空白補齊, 結果會丟掉補的那幾筆
     seq_len: 固定的 token 長度, 超過截斷, 不足補 pad
+    dynamic: True = 不固定形狀, 每批只補到該批最長 (像 PyTorch); NPU 不支援
+    config:  額外的 OpenVINO 編譯設定, 例如 {"SCHEDULING_CORE_TYPE": "ANY_CORE"}
     """
 
-    def __init__(self, model_id, device="CPU", batch=8, seq_len=128, use_cache=True):
+    def __init__(self, model_id, device="CPU", batch=8, seq_len=128, use_cache=True,
+                 dynamic=False, config=None):
         import openvino as ov
         from transformers import AutoTokenizer
 
-        self.device, self.batch, self.seq_len = device, batch, seq_len
+        self.device, self.batch, self.seq_len, self.dynamic = device, batch, seq_len, dynamic
         ir = export_ir(model_id)
         self.tokenizer = AutoTokenizer.from_pretrained(ir)
 
@@ -64,9 +67,10 @@ class OVEmbedder:
 
         model = core.read_model(ir / "openvino_model.xml")
         self.input_names = [i.get_any_name() for i in model.inputs]
-        model.reshape({name: [batch, seq_len] for name in self.input_names})
+        if not dynamic:
+            model.reshape({name: [batch, seq_len] for name in self.input_names})
 
-        config = {}
+        config = dict(config or {})
         if use_cache:
             OV_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             config["CACHE_DIR"] = str(OV_CACHE_DIR)
@@ -75,13 +79,26 @@ class OVEmbedder:
         self.compile_s = time.perf_counter() - t0
         self.request = self.compiled.create_infer_request()
 
+    def properties(self):
+        """編譯後實際生效的設定 (找效能差異時用)."""
+        out = {}
+        for k in ("PERFORMANCE_HINT", "INFERENCE_NUM_THREADS", "SCHEDULING_CORE_TYPE",
+                  "INFERENCE_PRECISION_HINT", "NUM_STREAMS", "ENABLE_HYPER_THREADING"):
+            try:
+                out[k] = str(self.compiled.get_property(k))
+            except Exception:
+                pass
+        return out
+
     def _infer(self, texts):
         n = len(texts)
-        padded = list(texts) + [""] * (self.batch - n)
-        enc = self.tokenizer(
-            padded, padding="max_length", truncation=True,
-            max_length=self.seq_len, return_tensors="np",
-        )
+        if self.dynamic:  # 只補到這批最長, 批次大小也不必補滿
+            enc = self.tokenizer(list(texts), padding="longest", truncation=True,
+                                 max_length=self.seq_len, return_tensors="np")
+        else:
+            padded = list(texts) + [""] * (self.batch - n)
+            enc = self.tokenizer(padded, padding="max_length", truncation=True,
+                                 max_length=self.seq_len, return_tensors="np")
         # 有些 tokenizer (例如此模型的 XLM-R tokenizer) 不回傳 token_type_ids,
         # 但轉出來的 IR 仍有這個輸入; BERT 單句輸入時它全是 0, 直接補 0
         feed = {name: (enc[name] if name in enc else np.zeros_like(enc["input_ids"])).astype(np.int64)

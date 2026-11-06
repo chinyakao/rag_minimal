@@ -26,6 +26,12 @@ except ImportError:
 DATA_DIR = Path(os.environ.get("DATA_DIR", HERE / "data"))  # 可用環境變數 DATA_DIR 切換資料集
 # 每個資料集各自一份索引, 切換 DATA_DIR 不會互相覆蓋 (預設的 data/ 沿用原本檔名)
 _SUFFIX = "" if DATA_DIR.resolve() == (HERE / "data").resolve() else f"_{DATA_DIR.name}"
+# CHUNK_TITLE=1: 每個 chunk 前面加上文件標題 (第一行的 "# 標題", 沒有就用檔名).
+# 例如 changelog 的版本號只寫在檔案開頭, 加上後每個 chunk 都知道自己屬於哪個版本.
+# 開啟時索引另存 (檔名加 _title), 不會蓋掉沒加標題的索引, 方便比較.
+CHUNK_TITLE = os.environ.get("CHUNK_TITLE", "0") == "1"
+if CHUNK_TITLE:
+    _SUFFIX += "_title"
 INDEX_FILE = HERE / f"index{_SUFFIX}.npz"
 CHUNKS_FILE = HERE / f"chunks{_SUFFIX}.json"
 
@@ -90,10 +96,19 @@ def embed(texts):
     return np.asarray(vecs, dtype=np.float32)
 
 
+def doc_title(name, text):
+    """文件標題: 第一行是 Markdown "# 標題" 就用它, 否則用檔名 (去掉副檔名)."""
+    first = text.lstrip().split("\n", 1)[0]
+    return first[2:].strip() if first.startswith("# ") else Path(name).stem
+
+
 def build_index():
     records = []
     for name, text in load_docs():
+        title = doc_title(name, text)
         for i, c in enumerate(chunk_text(text)):
+            if CHUNK_TITLE:
+                c = f"[{title}]\n{c}"
             records.append({"source": name, "chunk_id": i, "text": c})
     if not records:
         sys.exit(f"{DATA_DIR} 內沒有 .md 或 .txt 檔")
