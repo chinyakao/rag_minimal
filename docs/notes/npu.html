@@ -297,10 +297,32 @@ DATA_DIR=data/oem-7.0 sudo -E .venv/bin/python bench/bench_llm.py --model ov_mod
 <p>用 sudo 跑過一次後，<code>bench/results/</code>、<code>ov_models/</code>、<code>ov_cache/</code> 變成 root 所有，下次不加 sudo 就 PermissionError。現在程式結束時會用 <code>SUDO_UID</code> 自動把擁有者改回來。</p>
 <h3>4. CPU 提早結束，數字不公平</h3>
 <p>第一次跑 LLM 時 CPU 平均只生成 45 個 token 就停了（不同裝置數值有微小差異，模型在不同地方決定結束）。讀 prompt 的能量是固定的，回答越短，平均到每個 token 越多，CPU 的 J/token 被灌水成 2.77。改成 <code>ignore_eos</code>，固定生成 128 個之後是 1.36。<b>比較效能時，工作量要完全一樣</b>。</p>
-<h3>5. 尚未解決：OpenVINO CPU 比 PyTorch 慢</h3>
-<p>猜測：OpenVINO 每段都補滿 128 token，PyTorch 只補到該 batch 最長；另外 OpenVINO CPU 預設是低延遲模式。待驗證。</p>
-<h3>6. eval 漏掉的題目與裝置無關</h3>
+<h3>5. OpenVINO CPU「比較慢」：其實只有查詢慢，原因是補齊</h3>
+<p>第一輪看起來 OpenVINO CPU 建索引 40.7 vs PyTorch 48.8、查詢 24.7 ms vs 12.2 ms。用 <code>bench/bench_ov_cpu.py</code> 一次只改一個變因，查出三件事：</p>
+<table>
+<tr><th>變體</th><th>改了什麼</th><th>建索引 chunks/s（3 次中位數，最低-最高）</th><th>查詢 p50</th><th>執行緒</th></tr>
+<tr><td>PyTorch</td><td>基準</td><td class="n">35.5（34-49）</td><td class="n">22.4 ms</td><td class="n">16</td></tr>
+<tr><td>ov-static</td><td>固定 [8,128] / [1,128]（原本做法）</td><td class="n">58.6（41-60）</td><td class="n">27.0 ms</td><td class="n">6</td></tr>
+<tr><td>ov-static-q32</td><td>查詢改成固定 [1,32]</td><td class="n">42.6（42-43）</td><td class="n"><b>7.8 ms</b></td><td class="n">6</td></tr>
+<tr><td>ov-dynamic</td><td>不固定形狀，只補到該批最長</td><td class="n">41.9（42-42）</td><td class="n"><b>6.5 ms</b></td><td class="n">6</td></tr>
+<tr><td>ov-static-t16</td><td>要求 16 個執行緒</td><td class="n">37.2（36-37）</td><td class="n">37.0 ms</td><td class="n">14</td></tr>
+<tr><td>ov-dynamic-t16</td><td>動態 + 16 執行緒</td><td class="n">35.8（35-37）</td><td class="n">8.4 ms</td><td class="n">14</td></tr>
+</table>
+<ul>
+<li><b>查詢慢 = 補齊。</b>查詢平均只有 21 個 token（p95 28），固定形狀卻補到 128，多算約 6 倍。改成固定 32 或動態形狀，查詢降到 7 ms 左右，比 PyTorch 還快。固定 32 的好處是 <b>NPU 也能用</b>（NPU 只吃固定形狀），而且 p95 只有 8.2 ms，最穩。</li>
+<li><b>建索引沒有真的比較慢。</b>chunk 平均 124 個 token，本來就接近 128，補齊幾乎沒有浪費。同一個設定重跑，數字可以差到 1.5 倍（PyTorch 這次 35.5、上次 49；ov-static 這次 58.6、上次 43）。筆電會因為溫度和功耗上限降頻，工作被排到哪種核心也會影響，所以第一輪的差距在誤差範圍內。<b>教訓：筆電上量效能一定要重複幾次，看最低和最高差多少。</b></li>
+<li><b>多開執行緒反而更慢。</b>Core Ultra 7 155H 有 6 顆 P-core（大核）、8 顆 E-core（小核）、2 顆 LP E-core（省電核）。要求 16 個執行緒時實際拿到 14 個（P + E），建索引從約 42 掉到 37，查詢從 27 ms 變 37 ms。神經網路每一層都要等所有執行緒算完才能往下，E-core 比較慢，大家都在等它。OpenVINO 預設只用 6 顆 P-core 是對的。</li>
+<li>原本懷疑的 <code>SCHEDULING_CORE_TYPE=ANY_CORE</code> 本來就是預設值，那組實驗等於沒改東西。<b>先印出實際生效的設定再做實驗</b>（<code>OVEmbedder.properties()</code>）。</li>
+</ul>
+<h3>6. eval 漏掉的題目與裝置無關；在 chunk 前加版本號也沒救</h3>
 <p>5 題 MISS 在 CPU 和 NPU 上完全一樣，是檢索方法的問題：版本號只寫在檔案開頭，長版本中間切出來的 chunk 不知道自己屬於哪一版。</p>
+<p>試了 <code>CHUNK_TITLE=1</code>：每個 chunk 前面加上 <code>[linux-oem-7.0 (7.0.0-1012.12) ...]</code> 這種標題再重建索引。hit@3 還是 13/18 = 0.72，只是換了幾題（#16 變命中，#10 變沒命中，#14 從 3/3 掉到 2/3）。原因：</p>
+<ul>
+<li>每個 chunk 都多了幾乎一樣的前綴，chunk 之間變得更像，反而比較難分開。</li>
+<li>模型最多讀 128 個 token，前綴佔掉位置，chunk 尾巴被截掉。</li>
+<li>embedding 比的是「意思」，對「1012 和 1013」這種精確的數字或字串本來就不敏感。</li>
+</ul>
+<p>比較好的方向是：關鍵字搜尋（BM25）和向量搜尋並用，或先從問題抓出版本號，只在那一版的 chunk 裡找。</p>
 
 <h2 id="glossary">11. 名詞對照表</h2>
 <table>
@@ -324,8 +346,9 @@ DATA_DIR=data/oem-7.0 sudo -E .venv/bin/python bench/bench_llm.py --model ov_mod
 
 <h2 id="next">12. 下一步</h2>
 <ol>
-<li>每個 chunk 前面加上版本號，看「哪個版本」類題目的 hit@3 會不會變好。</li>
-<li>查 OpenVINO CPU 變慢的原因（動態長度、<code>PERFORMANCE_HINT=THROUGHPUT</code>）。</li>
+<li><s>每個 chunk 前面加上版本號</s>：試過，hit@3 不變（見第 10 節第 6 點）。改試 BM25 + 向量混合搜尋，或依版本號過濾。</li>
+<li><s>查 OpenVINO CPU 變慢的原因</s>：查詢是補齊造成，建索引是誤差（見第 10 節第 5 點）。</li>
+<li>NPU 查詢改用固定長度 32（<code>bench_embed.py --query-seq-len 32</code>），預期會比 7.6 ms 更快。</li>
 <li>embedding 試更大的 batch，看 NPU 和 GPU 的差距會不會改變。</li>
 <li>量冷啟動：<code>--no-cache</code> 看 NPU 第一次編譯要多久。</li>
 </ol>
