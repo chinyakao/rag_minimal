@@ -44,9 +44,11 @@ def load_corpus(n):
 
 
 def load_queries():
-    """用評估題目當查詢; DATA_DIR 指向 k8s 語料時改用英文題庫."""
+    """用評估題目當查詢; DATA_DIR 指向 k8s / oem 語料時改用對應的英文題庫."""
     if "k8s" in str(rag.DATA_DIR):
         from eval_k8s import EVAL_SET_K8S as items
+    elif "oem" in str(rag.DATA_DIR):
+        from eval_oem import EVAL_SET_OEM as items
     else:
         from eval import EVAL_SET as items
     return [item["q"] for item in items]
