@@ -87,7 +87,8 @@ def timed_loop(fn, min_seconds, meter):
 
 
 def bench_device(name, args, corpus, queries, ref_vecs, meter):
-    row = {"device": name, "model": rag.EMBED_MODEL, "batch": args.batch, "seq_len": args.seq_len}
+    row = {"device": name, "model": rag.EMBED_MODEL, "batch": args.batch, "seq_len": args.seq_len,
+           "query_seq_len": args.query_seq_len}
 
     # 1) 建索引吞吐量
     enc, row["compile_s"] = make_backend(name, args.batch, args.seq_len, not args.no_cache)
@@ -107,7 +108,7 @@ def bench_device(name, args, corpus, queries, ref_vecs, meter):
     row["cos_vs_ref_min"] = float(np.min(np.sum(vecs * ref_vecs, axis=1)))
 
     # 3) 單筆查詢延遲 (batch=1)
-    q_enc, _ = make_backend(name, 1, args.seq_len, not args.no_cache)
+    q_enc, _ = make_backend(name, 1, args.query_seq_len, not args.no_cache)
     for q in queries[:args.warmup]:
         q_enc([q])
     lat = []
@@ -145,6 +146,8 @@ def main():
                     help="st-CPU = sentence-transformers (PyTorch) 基準; 其餘為 OpenVINO 裝置名")
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--seq-len", type=int, default=128)
+    ap.add_argument("--query-seq-len", type=int, default=128,
+                    help="查詢用的固定長度; 查詢平均約 21 token, 設 32 可少算很多 (NPU 也適用)")
     ap.add_argument("--n-chunks", type=int, default=256, help="建索引測試用的 chunk 數")
     ap.add_argument("--min-seconds", type=float, default=10.0, help="每項量測至少跑幾秒 (功耗需要夠長)")
     ap.add_argument("--query-iters", type=int, default=200)

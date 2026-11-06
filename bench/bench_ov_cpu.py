@@ -36,11 +36,14 @@ import rag  # noqa: E402
 from bench_embed import load_corpus, load_queries  # noqa: E402
 from ownership import give_back  # noqa: E402
 
+# 第一輪結果: ANY_CORE 本來就是預設, 四個 OpenVINO 變體都只用 6 個執行緒 (PyTorch 用 16).
+# 第二輪改測: 執行緒數, 以及「查詢用短一點的固定長度」(NPU 也能用的解法)
 VARIANTS = {
     "ov-static": dict(dynamic=False, config={}),
+    "ov-static-q32": dict(dynamic=False, config={}, query_seq_len=32),
     "ov-dynamic": dict(dynamic=True, config={}),
-    "ov-static-any": dict(dynamic=False, config={"SCHEDULING_CORE_TYPE": "ANY_CORE"}),
-    "ov-dynamic-any": dict(dynamic=True, config={"SCHEDULING_CORE_TYPE": "ANY_CORE"}),
+    "ov-static-t16": dict(dynamic=False, config={"INFERENCE_NUM_THREADS": 16}),
+    "ov-dynamic-t16": dict(dynamic=True, config={"INFERENCE_NUM_THREADS": 16}),
 }
 
 
@@ -60,7 +63,7 @@ def run_loop(fn, min_seconds):
             return n, time.perf_counter() - t0
 
 
-def make(name, batch):
+def make(name, batch, query=False):
     if name == "st":
         import torch
         from sentence_transformers import SentenceTransformer
@@ -68,7 +71,10 @@ def make(name, batch):
         enc = lambda texts: np.asarray(m.encode(texts, batch_size=batch, normalize_embeddings=True))  # noqa: E731
         return enc, {"torch_threads": torch.get_num_threads()}
     from embed_ov import OVEmbedder
-    m = OVEmbedder(rag.EMBED_MODEL, device="CPU", batch=batch, use_cache=False, **VARIANTS[name])
+    v = dict(VARIANTS[name])
+    q_len = v.pop("query_seq_len", 128)
+    m = OVEmbedder(rag.EMBED_MODEL, device="CPU", batch=batch, use_cache=False,
+                   seq_len=q_len if query else 128, **v)
     return m.encode, m.properties()
 
 
@@ -78,6 +84,7 @@ def main():
     ap.add_argument("--n-chunks", type=int, default=256)
     ap.add_argument("--min-seconds", type=float, default=8.0)
     ap.add_argument("--query-iters", type=int, default=200)
+    ap.add_argument("--repeat", type=int, default=3, help="建索引測試重複幾次, 取中位數")
     args = ap.parse_args()
 
     corpus, queries = load_corpus(args.n_chunks), load_queries()
@@ -91,10 +98,13 @@ def main():
         print(f"\n== {name} ==")
         enc, props = make(name, 8)
         enc(corpus[:16])  # 暖機
-        n, secs = run_loop(lambda: enc(corpus), args.min_seconds)
+        cps = []
+        for _ in range(args.repeat):  # 同一設定重複幾次, 看誤差有多大
+            n, secs = run_loop(lambda: enc(corpus), args.min_seconds)
+            cps.append(n * len(corpus) / secs)
         vecs = enc(corpus[:64])
         ref = vecs if ref is None else ref
-        q_enc, _ = make(name, 1)
+        q_enc, _ = make(name, 1, query=True)
         for q in queries[:5]:
             q_enc([q])
         lat = []
@@ -102,16 +112,18 @@ def main():
             t0 = time.perf_counter()
             q_enc([queries[i % len(queries)]])
             lat.append((time.perf_counter() - t0) * 1000)
-        row = {"variant": name, "index_cps": n * len(corpus) / secs,
+        row = {"variant": name, "index_cps": float(np.median(cps)),
+               "index_cps_min": min(cps), "index_cps_max": max(cps),
                "query_p50_ms": float(np.percentile(lat, 50)), "query_p95_ms": float(np.percentile(lat, 95)),
                "cos_vs_first": float(np.mean(np.sum(vecs * ref, axis=1))), **props}
         rows.append(row)
         print(row)
 
-    print(f"\n{'variant':>15} | {'index cps':>9} | {'query p50':>9} | {'p95':>7} | threads / core type")
+    print(f"\n{'variant':>15} | {'index cps (min-max)':>20} | {'query p50':>9} | {'p95':>7} | threads")
     for r in rows:
-        extra = r.get("torch_threads") or f"{r.get('INFERENCE_NUM_THREADS', '?')} / {r.get('SCHEDULING_CORE_TYPE', '?')}"
-        print(f"{r['variant']:>15} | {r['index_cps']:9.1f} | {r['query_p50_ms']:7.1f}ms | {r['query_p95_ms']:5.1f}ms | {extra}")
+        extra = r.get("torch_threads") or r.get("INFERENCE_NUM_THREADS", "?")
+        rng = f"{r['index_cps']:.1f} ({r['index_cps_min']:.0f}-{r['index_cps_max']:.0f})"
+        print(f"{r['variant']:>15} | {rng:>20} | {r['query_p50_ms']:7.1f}ms | {r['query_p95_ms']:5.1f}ms | {extra}")
 
     meta = {"time": datetime.now().isoformat(timespec="seconds"), "cpu_count": os.cpu_count(),
             "chunk_tokens_mean": c_mean, "query_tokens_mean": q_mean}
