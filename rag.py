@@ -57,6 +57,9 @@ TOP_K = 4
 RETRIEVAL = os.environ.get("RETRIEVAL", "vector")
 BM25_K1, BM25_B = 1.5, 0.75   # BM25 常用預設值
 RRF_K = 60                    # RRF 常用預設值, 越大則排名前後的差距越小
+# 加權 RRF: BM25 那一邊的分數乘上這個權重 (向量固定為 1). 預設 1 = 原本的等權重.
+# 例如 BM25_WEIGHT=2: 某個 chunk 在 BM25 排第 1 的貢獻是 2/61, 比向量排第 1 的 1/61 大一倍.
+BM25_WEIGHT = float(os.environ.get("BM25_WEIGHT", "1"))
 CANDIDATES = 50               # hybrid 時兩邊各取前幾名來融合
 
 _model = None
@@ -198,13 +201,14 @@ def get_bm25(records):
     return _bm25
 
 
-def rrf(rankings, k=RRF_K):
-    """Reciprocal Rank Fusion: 每個 chunk 的分數 = sum 1/(k + 名次). 只看名次, 不看原始分數,
+def rrf(rankings, weights=None, k=RRF_K):
+    """Reciprocal Rank Fusion: 每個 chunk 的分數 = sum 權重/(k + 名次). 只看名次, 不看原始分數,
     所以 cosine (0~1) 和 BM25 (0~幾十) 不用先調成同一個尺度."""
+    weights = weights or [1.0] * len(rankings)
     fused = {}
-    for ranking in rankings:
+    for ranking, w in zip(rankings, weights):
         for rank, i in enumerate(ranking, 1):
-            fused[i] = fused.get(i, 0.0) + 1.0 / (k + rank)
+            fused[i] = fused.get(i, 0.0) + w / (k + rank)
     return sorted(fused.items(), key=lambda x: -x[1])
 
 
@@ -222,7 +226,8 @@ def retrieve(query, k=TOP_K, mode=None):
         n = min(CANDIDATES, len(records))
         by_vec = np.argsort(-vector_scores(query, matrix))[:n]
         by_bm25 = np.argsort(-get_bm25(records).scores(query))[:n]
-        return [(s, records[i]) for i, s in rrf([by_vec, by_bm25])[:k]]
+        fused = rrf([by_vec, by_bm25], weights=[1.0, BM25_WEIGHT])
+        return [(s, records[i]) for i, s in fused[:k]]
     else:
         sys.exit(f"未知的 RETRIEVAL={mode}, 可用 vector / bm25 / hybrid")
     top = np.argsort(-scores)[:k]
