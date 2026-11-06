@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "bench"))
 
 import rag  # noqa: E402
+from ownership import give_back  # noqa: E402
 from power import PowerMeter, idle_baseline  # noqa: E402
 
 DEFAULT_QUESTIONS = [
@@ -162,6 +163,7 @@ def main():
     with out.open("w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    give_back(out.parent, ROOT / "ov_models", ROOT / "ov_cache")
     print(f"\n結果已存到 {out}")
 
 
