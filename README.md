@@ -52,6 +52,7 @@ python scripts/fetch_oem_changelog.py                     # -> data/oem-7.0/linu
 python scripts/fetch_oem_changelog.py --min 1010 --max 1018   # 只取部分版本
 DATA_DIR=data/oem-7.0 python rag.py index
 DATA_DIR=data/oem-7.0 python rag.py ask "Which version fixed the upside-down front camera?" --no-llm
+python eval.py --oem                                      # 20 題 kernel 題庫 (eval_oem.py)
 ```
 
 ### 設定金鑰 (.env)
@@ -67,7 +68,8 @@ DATA_DIR=data/oem-7.0 python rag.py ask "Which version fixed the upside-down fro
 ## 檔案說明
 
 - `rag.py`: 索引, 檢索, 生成的主程式
-- `eval.py`: hit@k 檢索評估
+- `eval.py`: hit@k 檢索評估 (`--k8s`, `--oem` 切換英文題庫)
+- `eval_oem.py`: Ubuntu linux-oem-7.0 kernel changelog 題庫 (20 題)
 - `embed_ov.py`: OpenVINO embedding 後端 (CPU / GPU / NPU), `EMBED_BACKEND=openvino` 時使用
 - `bench/`: CPU / GPU / NPU 效能與功耗 benchmark (見下方「在 CPU / GPU / NPU 上跑」)
 - `data/`: 資料集資料夾 (藝人維基條目, **不進版控**, 用下方腳本下載; 也可用環境變數 `DATA_DIR` 指定其他資料夾)

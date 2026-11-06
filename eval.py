@@ -5,6 +5,7 @@
     python eval.py 5          # 改用 k=5
     python eval.py --llm      # 另外呼叫 LLM, 檢查 refuse 類題目是否拒答
     python eval.py --k8s      # 英文 Kubernetes 語料與題庫 (eval_k8s.py), 可與上面參數併用
+    python eval.py --oem      # 英文 Ubuntu linux-oem-7.0 kernel changelog 題庫 (eval_oem.py)
 
 欄位說明:
     type             題型 (single / multi_para / cross / reasoning / boundary)
@@ -21,6 +22,10 @@ from pathlib import Path
 USE_K8S = "--k8s" in sys.argv
 if USE_K8S:
     os.environ["DATA_DIR"] = str(Path(__file__).parent / "data" / "k8s")
+# --oem: Ubuntu linux-oem-7.0 kernel changelog (scripts/fetch_oem_changelog.py)
+USE_OEM = "--oem" in sys.argv
+if USE_OEM:
+    os.environ["DATA_DIR"] = str(Path(__file__).parent / "data" / "oem-7.0")
 
 from rag import retrieve
 
@@ -111,9 +116,12 @@ def run(k=3, use_llm=False):
     by_type = {}
     refuse_total = refuse_ok = 0
 
+    items = EVAL_SET
     if USE_K8S:
-        from eval_k8s import EVAL_SET_K8S
-    for item in (EVAL_SET_K8S if USE_K8S else EVAL_SET):
+        from eval_k8s import EVAL_SET_K8S as items
+    elif USE_OEM:
+        from eval_oem import EVAL_SET_OEM as items
+    for item in items:
         results = retrieve(item["q"], k=k)
         sources = [r["source"] for _, r in results]
         top1 = results[0][0]
