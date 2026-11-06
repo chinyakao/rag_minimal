@@ -82,7 +82,10 @@ class OVEmbedder:
             padded, padding="max_length", truncation=True,
             max_length=self.seq_len, return_tensors="np",
         )
-        feed = {name: enc[name].astype(np.int64) for name in self.input_names}
+        # 有些 tokenizer (例如此模型的 XLM-R tokenizer) 不回傳 token_type_ids,
+        # 但轉出來的 IR 仍有這個輸入; BERT 單句輸入時它全是 0, 直接補 0
+        feed = {name: (enc[name] if name in enc else np.zeros_like(enc["input_ids"])).astype(np.int64)
+                for name in self.input_names}
         out = self.request.infer(feed)
         hidden = out[self.compiled.output(0)]          # [batch, seq_len, dim]
         mask = enc["attention_mask"][..., None].astype(np.float32)
