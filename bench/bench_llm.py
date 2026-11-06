@@ -80,7 +80,10 @@ def bench_device(device, args, prompts, meter):
                                         args.max_new_tokens, not args.no_cache)
     gen = ov_genai.GenerationConfig()
     gen.max_new_tokens = args.max_new_tokens
-    gen.do_sample = False  # greedy, 讓每個裝置輸出一樣長度
+    gen.do_sample = False  # greedy
+    # 不理會結束符號, 一律生成 max_new_tokens 個 token: 各裝置的數值有微小差異,
+    # 回答可能在不同地方結束 (例如 CPU 提早停), 長度不同就無法公平比較 tokens/s 與 J/token
+    gen.ignore_eos = not args.allow_eos
 
     pipe.generate([prompts[0]], gen)  # 暖機
 
@@ -124,6 +127,7 @@ def main():
     ap.add_argument("--idle-seconds", type=float, default=5.0)
     ap.add_argument("--cooldown", type=float, default=10.0)
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--allow-eos", action="store_true", help="允許模型提早結束 (預設固定生成 max_new_tokens 個)")
     ap.add_argument("--question", action="append", help="自訂問題, 可重複; 預設依 DATA_DIR 選題")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
