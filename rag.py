@@ -1,7 +1,7 @@
 """最小 RAG: 不用 LangChain, 只用 numpy + sentence-transformers + Anthropic SDK.
 
 用法:
-    python rag.py index                      # 讀 data/ 建索引
+    python rag.py index                      # 讀 data/oem-7.0/ 建索引
     python rag.py ask "你的問題"              # 檢索 + 生成
     python rag.py ask "你的問題" --no-llm     # 只看檢索結果 (不需 API key)
     RETRIEVAL=hybrid python rag.py ask "..."  # 檢索方式: vector (預設) / bm25 / hybrid
@@ -26,9 +26,10 @@ try:
 except ImportError:
     pass
 
-DATA_DIR = Path(os.environ.get("DATA_DIR", HERE / "data"))  # 可用環境變數 DATA_DIR 切換資料集
-# 每個資料集各自一份索引, 切換 DATA_DIR 不會互相覆蓋 (預設的 data/ 沿用原本檔名)
-_SUFFIX = "" if DATA_DIR.resolve() == (HERE / "data").resolve() else f"_{DATA_DIR.name}"
+# 預設資料集: Ubuntu linux-oem-7.0 kernel changelog; 可用環境變數 DATA_DIR 切換
+DATA_DIR = Path(os.environ.get("DATA_DIR", HERE / "data" / "oem-7.0"))
+# 每個資料集各自一份索引 (檔名帶資料夾名, 例如 index_oem-7.0.npz), 切換 DATA_DIR 不會互相覆蓋
+_SUFFIX = f"_{DATA_DIR.name}"
 # CHUNK_TITLE=1: 每個 chunk 前面加上文件標題 (第一行的 "# 標題", 沒有就用檔名).
 # 例如 changelog 的版本號只寫在檔案開頭, 加上後每個 chunk 都知道自己屬於哪個版本.
 # 開啟時索引另存 (檔名加 _title), 不會蓋掉沒加標題的索引, 方便比較.

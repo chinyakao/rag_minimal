@@ -1,11 +1,11 @@
-"""English eval set: Ubuntu linux-oem-7.0 kernel changelog, 20 questions.
+"""English eval set: Ubuntu linux-oem-7.0 kernel changelog, 28 questions.
 
 Corpus: data/oem-7.0/, one file per version (scripts/fetch_oem_changelog.py).
-Used by eval.py with the --oem flag:
-    python eval.py --oem            # retrieval only, k=3
-    python eval.py --oem 5 --llm    # k=5, also call the LLM for refuse/manual questions
+Used by eval.py (the only eval set now):
+    python eval.py            # retrieval only, k=3
+    python eval.py 5 --llm    # k=5, also call the LLM for refuse/manual questions
 
-Same fields and type mix as eval.py / eval_k8s.py
+Fields as described in eval.py. Type mix: 20 original questions
 (single 5 / multi_para 5 / cross 5 / reasoning 3 / boundary 2),
 plus 8 paraphrase questions (#21-28) that avoid the changelog's own wording.
 Every "answer" question was checked against the changelog on 2026-11-06
