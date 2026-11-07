@@ -124,12 +124,17 @@ LOCAL_SYSTEM = (
     "Answer in 1 to 3 short sentences: give the kernel version and cite the excerpt like [1]. "
     "If the excerpts do not answer the question, reply exactly: Not found in the changelog."
 )
+BEST_LAST = True  # main() 會依 --best-first 改掉
 _VERSION = re.compile(r"\d+\.\d+\.\d+-\d+\.\d+")
 
 
 def build_local_prompt(question, hits):
     parts = []
-    for n, (_, r) in enumerate(hits, 1):
+    order = list(enumerate(hits, 1))
+    if BEST_LAST:
+        # 小模型常偏向最靠近問題的那段 (實測兩次都答成排在最後的 [4]), 把分數最高的放最後, 編號不變
+        order.reverse()
+    for n, (_, r) in order:
         m = _VERSION.search(r["source"])
         version = m.group(0) if m else r["source"]
         parts.append(f"[{n}] kernel version {version}:\n{' '.join(r['text'].split())}")
@@ -207,6 +212,8 @@ def run_device(dev, pipe, prompt, args, idle_w):
     gen.repetition_penalty = args.repetition_penalty
     if hasattr(gen, "apply_chat_template"):
         gen.apply_chat_template = False  # prompt 已經套過 chat template
+    # 小模型答完常會自己編下一題 ("Question: ... Answer: ..."), 看到就停
+    gen.stop_strings = {"\nQuestion:", "Question:"}
 
     header(f"Step 2  {dev} 回答")
     meter = PowerMeter()
@@ -223,11 +230,12 @@ def run_device(dev, pipe, prompt, args, idle_w):
         try:
             res = pipe.generate([prompt], gen, streamer)  # 傳 list 才會回傳含 perf_metrics 的結果, 傳 str 只回傳字串
         except RuntimeError as e:
-            # 萬一某個裝置 (例如較舊版的 NPU pipeline) 不支援 repetition_penalty, 就不加再跑一次
-            if gen.repetition_penalty == 1.0:
+            # 萬一某個裝置 (例如較舊版的 NPU pipeline) 不支援 repetition_penalty / stop_strings, 就不加再跑一次
+            if gen.repetition_penalty == 1.0 and not gen.stop_strings:
                 raise
-            print(dim(f"({dev} 不支援 repetition_penalty, 改用預設值: {e})"))
+            print(dim(f"({dev} 不支援 repetition_penalty 或 stop_strings, 改用預設值: {e})"))
             gen.repetition_penalty = 1.0
+            gen.stop_strings = set()
             first[0] = None
             t0 = time.perf_counter()
             res = pipe.generate([prompt], gen, streamer)  # 傳 list 才會回傳含 perf_metrics 的結果, 傳 str 只回傳字串
@@ -325,9 +333,13 @@ def main():
     ap.add_argument("--max-prompt-len", type=int, default=2048, help="NPU 用: prompt 最大 token 數")
     ap.add_argument("--cooldown", type=float, default=2.0, help="裝置之間的間隔秒數")
     ap.add_argument("--idle-seconds", type=float, default=3.0, help="開場量閒置功耗的秒數, 0 = 不量")
+    ap.add_argument("--best-first", action="store_true",
+                    help="本機模型的資料依分數由高到低排 (預設反過來, 最相關的放在最靠近問題的位置)")
     ap.add_argument("--claude", action="store_true", help="最後用雲端 Claude 回答一次當對照")
     ap.add_argument("-q", "--question", action="append", help="直接問這題 (可重複), 不進互動模式")
     args = ap.parse_args()
+    global BEST_LAST
+    BEST_LAST = not args.best_first
 
     records = load_records_or_chunk() if args.retrieval == "bm25" else None
     if records is not None:
