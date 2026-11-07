@@ -212,8 +212,9 @@ def run_device(dev, pipe, prompt, args, idle_w):
     gen.repetition_penalty = args.repetition_penalty
     if hasattr(gen, "apply_chat_template"):
         gen.apply_chat_template = False  # prompt 已經套過 chat template
-    # 小模型答完常會自己編下一題 ("Question: ... Answer: ..."), 看到就停
-    gen.stop_strings = {"\nQuestion:", "Question:"}
+    # 小模型答完常會接著亂寫: 自己編下一題 ("Question: ..."), 列一串 "[1] [2] ... [28]",
+    # 或把資料原文 "[1] kernel version ..." 抄一遍; 這些都是換行後接 "[" 或 "Question:", 看到就停
+    gen.stop_strings = {"Question:", "\n["}
 
     header(f"Step 2  {dev} 回答")
     meter = PowerMeter()

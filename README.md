@@ -163,7 +163,7 @@ sudo -E .venv/bin/python demo.py --model ov_models/qwen2.5-1.5b-int4    # 要顯
 - 本機小模型用專用的英文 prompt (每段資料前標版本號, 自訂 system message) 並加 `--repetition-penalty 1.1`,
   避免 1.5B 模型在 greedy 下重複鬼打牆; `--claude` 仍用 `rag.py` 原本的 prompt.
 - 本機模型的資料預設把分數最高的放在最後 (最靠近問題; 小模型偏向看最後一段), `--best-first` 改回由高到低;
-  看到 `Question:` 就停止, 避免模型自己編下一題.
+  看到 `Question:` 或換行後的 `[` 就停止, 避免模型自己編下一題, 列一串引用編號或抄資料原文.
 
 ### 功耗量測的權限
 
