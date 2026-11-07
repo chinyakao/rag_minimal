@@ -25,7 +25,7 @@ API = "https://zh.wikipedia.org/w/api.php"
 # Wikimedia 要求帶有可辨識的 User-Agent: 請用環境變數 WIKI_CONTACT 提供你的聯絡方式 (不要寫進程式碼)
 CONTACT = os.environ.get("WIKI_CONTACT", "your_email@example.com")
 HEADERS = {"User-Agent": f"rag-practice-script/1.0 ({CONTACT})"}
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
 
 
 def fetch(title: str) -> dict:
