@@ -6,6 +6,8 @@
     python eval.py --llm      # 另外呼叫 LLM, 檢查 refuse 類題目是否拒答
     python eval.py --k8s      # 英文 Kubernetes 語料與題庫 (eval_k8s.py), 可與上面參數併用
     python eval.py --oem      # 英文 Ubuntu linux-oem-7.0 kernel changelog 題庫 (eval_oem.py)
+    python eval.py --bm25     # 檢索改用 BM25; --hybrid 則用向量 + BM25 的 RRF 融合 (預設只用向量)
+    BM25_WEIGHT=2 python eval.py --oem --hybrid   # 加權 RRF, BM25 權重 2, 向量 1
 
 欄位說明:
     type             題型 (single / multi_para / cross / reasoning / boundary)
@@ -27,7 +29,12 @@ USE_OEM = "--oem" in sys.argv
 if USE_OEM:
     os.environ["DATA_DIR"] = str(Path(__file__).parent / "data" / "oem-7.0")
 
-from rag import retrieve
+# --bm25 / --hybrid: 切換檢索方式, 同樣要在 import rag 之前設定
+for _mode in ("bm25", "hybrid"):
+    if f"--{_mode}" in sys.argv:
+        os.environ["RETRIEVAL"] = _mode
+
+from rag import BM25_WEIGHT, RETRIEVAL, retrieve
 
 REFUSAL_TEXT = "資料中找不到答案"
 
@@ -159,7 +166,8 @@ def run(k=3, use_llm=False):
             else:
                 print(f"       LLM 回答 (請人工檢查): {answer[:200]}...")
 
-    print(f"\nhit@{k} = {hit_ok}/{hit_total} = {hit_ok / hit_total:.2f}")
+    mode = f"hybrid, BM25_WEIGHT={BM25_WEIGHT:g}" if RETRIEVAL == "hybrid" else RETRIEVAL
+    print(f"\n[{mode}] hit@{k} = {hit_ok}/{hit_total} = {hit_ok / hit_total:.2f}")
     for name, (n, ok) in by_type.items():
         print(f"  {name:<10} {ok}/{n}")
     if use_llm and refuse_total:

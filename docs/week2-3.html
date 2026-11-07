@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Learning Journal: Weeks 2–3</title>
+<meta name="description" content="I moved my from-scratch RAG to a Linux kernel changelog, added BM25 and hybrid search, and found that keyword search beat hybrid. Here is why, with every number.">
+<link rel="canonical" href="https://chinyakao.github.io/rag_minimal/week2-3.html">
+<link rel="alternate" hreflang="en" href="https://chinyakao.github.io/rag_minimal/week2-3.html">
+<link rel="alternate" hreflang="zh-Hant" href="https://chinyakao.github.io/rag_minimal/week2-3-zh.html">
+<meta property="og:title" content="RAG Learning Journal: Weeks 2–3">
+<meta property="og:description" content="I moved my from-scratch RAG to a Linux kernel changelog, added BM25 and hybrid search, and found that keyword search beat hybrid. Here is why, with every number.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://chinyakao.github.io/rag_minimal/week2-3.html">
+<meta property="og:image" content="https://chinyakao.github.io/rag_minimal/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg:#fafaf7; --fg:#1f2328; --muted:#5b636b; --line:#e3e1da; --card:#ffffff;
+  --accent:#2f6f5e; --ok:#2f6f5e; --okbg:#e3f0ea; --miss:#a8472f; --missbg:#f7e6e0;
+  --manual:#8a6d1f; --manualbg:#f6efd8; --refuse:#2f5f8a; --refusebg:#e1ecf6; --code:#f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+    --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+    --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+  --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+  --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:720px; margin:0 auto; padding:48px 16px 80px; }
+h1 { font-size:2rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.3rem; margin:48px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+p, li { font-size:1.02rem; }
+.sub { color:var(--muted); margin:0 0 28px; }
+.kpi { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0; }
+.kpi div { flex:1 1 150px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.kpi b { display:block; font-size:1.8rem; line-height:1.2; }
+.kpi span { color:var(--muted); font-size:.9rem; }
+.bar { display:flex; align-items:center; gap:10px; margin:8px 0; }
+.bl { width:6.5em; font-size:.92rem; color:var(--muted); }
+.track { flex:1; height:14px; background:var(--line); border-radius:7px; overflow:hidden; }
+.track i { display:block; height:100%; background:var(--accent); border-radius:7px; }
+.bv { width:2.6em; text-align:right; font-variant-numeric:tabular-nums; font-size:.92rem; }
+ul.grid { list-style:none; padding:0; margin:16px 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+.cell { border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; font-size:.82rem; border:1px solid transparent; }
+.cell b { font-size:1rem; }
+.cell.ok { background:var(--okbg); color:var(--ok); }
+.cell.miss { background:var(--missbg); color:var(--miss); }
+.cell.manual { background:var(--manualbg); color:var(--manual); }
+.cell.refuse { background:var(--refusebg); color:var(--refuse); }
+.legend { color:var(--muted); font-size:.88rem; }
+code { background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em; }
+pre { background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:.88rem; line-height:1.6; }
+pre code { background:none; padding:0; }
+.note { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:8px; padding:12px 16px; margin:16px 0; }
+.tag { color:var(--manual); font-size:.85rem; }
+footer { margin-top:56px; color:var(--muted); font-size:.88rem; }
+@media (max-width:480px) { h1 { font-size:1.6rem; } .bl { width:5.5em; } }
+
+.lang { text-align:right; font-size:.9rem; margin-bottom:8px; }
+.lang a { color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; }
+.lang a:hover { border-color:var(--accent); }
+
+h3 { font-size:1.08rem; margin:28px 0 8px; }
+.tbl { overflow-x:auto; margin:16px 0; }
+table { border-collapse:collapse; width:100%; font-size:.92rem; font-variant-numeric:tabular-nums; }
+th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:center; }
+th:first-child, td:first-child { text-align:left; }
+thead th { color:var(--muted); font-weight:600; }
+td.ok { color:var(--ok); background:var(--okbg); }
+td.miss { color:var(--miss); background:var(--missbg); }
+tr.best td { font-weight:700; }
+.nav { font-size:.92rem; color:var(--muted); }
+.nav a, footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<nav class="lang"><a href="week2-3-zh.html" hreflang="zh-Hant">繁體中文</a></nav>
+<p class="nav"><a href="./">← Week 1</a></p>
+<h1>RAG Learning Journal: Weeks 2–3</h1>
+<p class="sub">Keyword search, hybrid search, and an eval set that tells the truth. 2026-11-07</p>
+
+<p>In week 1 I built a minimal RAG without a framework. This update covers what came next: I moved it to a new dataset (a public Linux kernel changelog), added keyword search (BM25) and hybrid search, and then rewrote part of the eval set because the first result looked too good to be true.</p>
+
+<div class="kpi">
+  <div><b>0.72 → 1.00</b><span>hit@3 on the original 18 questions, vector → BM25</span></div>
+  <div><b>3 / 8</b><span>reworded questions any single method gets right</span></div>
+  <div><b>0</b><span>new dependencies: BM25 and RRF are hand-written</span></div>
+</div>
+
+<h2>Week 2: a harder corpus</h2>
+<p>I replaced the artist Wikipedia pages with the public Ubuntu <code>linux-oem-7.0</code> kernel changelog: 18 versions, one file per version, 3,588 chunks. It is hard for retrieval: long lists of patch titles, driver names, chip IDs like <code>OV02C10</code>, hex codes like <code>0xC05</code>, and the version number written only once at the top of each file.</p>
+<p>I wrote 20 new questions in five types (single fact, multi-line, cross-version, reasoning such as "is this fixed if I am on version X?", and two that should be refused), and checked every answer against the changelog.</p>
+<ul>
+  <li><b>Vector baseline: hit@3 = 13/18 = 0.72.</b> The five misses were all about exact strings or versions.</li>
+  <li><b>Experiment: prefix every chunk with its version title.</b> No change (still 0.72). One question became a hit, another became a miss. The embedding model does not treat a version string as something to match exactly.</li>
+</ul>
+<div class="note">Conclusion of week 2: exact strings such as version numbers and hex codes are not something embeddings are good at. That pointed straight at keyword search.</div>
+
+<h2>Week 3: BM25, hybrid search, and a fairer test</h2>
+<h3>What I added</h3>
+<ul>
+  <li><b>BM25</b>, written by hand in numpy (about 40 lines). The tokenizer keeps strings like <code>0xc05</code>, <code>ov02c10</code> and <code>1018.18</code> as single tokens, so they can match exactly.</li>
+  <li><b>Hybrid search with RRF.</b> Vector and BM25 each return their top 50, and Reciprocal Rank Fusion merges them: every chunk scores <code>1/(60 + rank)</code> from each list. It uses only ranks, so the two very different score scales (cosine 0–1, BM25 0–50) don't need to be normalized.</li>
+  <li><b>Weighted RRF</b>: <code>BM25_WEIGHT=2</code> doubles BM25's contribution.</li>
+  <li>One switch for all of it: <code>python eval.py --oem --bm25</code> or <code>--hybrid</code>.</li>
+</ul>
+
+<h3>First result: too good</h3>
+<p>BM25 alone scored <b>18/18</b> and hybrid 17/18. Before celebrating, I looked at the questions: I had written them while reading the changelog, so they reuse its exact words. That favours keyword search by construction. Real users don't type "oversized UATS command"; they say "my wifi keeps failing".</p>
+
+<h3>So I added 8 reworded questions</h3>
+<p>Each one describes a symptom the way a user would and avoids the changelog's driver names, chip IDs and bug titles. For example, "the computer freezes when I power off with a Thunderbolt dock plugged in" for the entry "Fix hang on shutdown with TBT3 connected".</p>
+
+<h3>Results (hit@3)</h3>
+<div class="tbl"><table><thead><tr><th>Method</th><th>Original 18</th><th>Reworded 8</th><th>All 26</th></tr></thead><tbody><tr><td>Vector only</td><td>13/18</td><td>3/8</td><td>16/26 = 0.62</td></tr><tr class=best><td>BM25 only</td><td>18/18</td><td>3/8</td><td>21/26 = 0.81</td></tr><tr><td>Hybrid (RRF, equal weight)</td><td>17/18</td><td>3/8</td><td>20/26 = 0.77</td></tr><tr><td>Hybrid (RRF, BM25 weight 2)</td><td>17/18</td><td>2/8</td><td>19/26 = 0.73</td></tr></tbody></table></div>
+<p class="legend">Per question (Q19 and Q20 should be refused and have no correct document, so they are not scored; * = reworded question):</p>
+<div class="tbl"><table><thead><tr><th>#</th><th>vector</th><th>BM25</th><th>hybrid</th><th>hybrid, BM25×2</th></tr></thead><tbody><tr><td>Q1</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q2</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q3</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q4</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q5</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q6</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q7</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q8</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q9</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q10</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q11</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q12</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q13</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q14</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q15</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q16</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q17</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q18</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q21 *</td><td class="ok">Hit</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q22 *</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q23 *</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr><tr><td>Q24 *</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q25 *</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="miss">Miss</td></tr><tr><td>Q26 *</td><td class="ok">Hit</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q27 *</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td><td class="miss">Miss</td></tr><tr><td>Q28 *</td><td class="miss">Miss</td><td class="ok">Hit</td><td class="ok">Hit</td><td class="ok">Hit</td></tr></tbody></table></div>
+
+<h2>What I learned</h2>
+<h3>1. The eval set decides the conclusion</h3>
+<p>With questions copied from the source text, BM25 looked perfect. With reworded questions, every method got 3 of 8 or fewer. If I had stopped at the first run, I would have drawn the wrong conclusion. Writing questions in the user's words is now part of how I build eval sets.</p>
+<h3>2. Hybrid is not automatically better</h3>
+<p>On the reworded questions, vector and BM25 each got 3 right, but <b>different</b> ones (vector: Q21, Q23, Q26; BM25: Q23, Q25, Q28). Together they cover 5 of 8, yet hybrid still got only 3. RRF rewards chunks that rank well in <i>both</i> lists. When each method finds a different answer, the two answers push each other down and something "fairly good in both" wins.</p>
+<h3>3. Weighting did not fix it</h3>
+<p>Giving BM25 twice the weight made the result slightly worse (19/26). The problem is not which side is louder; the two lists barely overlap.</p>
+<h3>4. The real bottleneck is the embedding model</h3>
+<p>The model is a small, general-purpose multilingual MiniLM. Understanding a reworded question is exactly what vectors are supposed to be good at, and it only got 3 of 8. Hybrid can only help once the vector side is strong on its own.</p>
+<div class="note">With 8 reworded questions, one question is 12 percentage points. These numbers show direction, not a final verdict.</div>
+
+<h2>Next steps</h2>
+<ol>
+  <li>Swap in an English retrieval model (for example <code>BAAI/bge-small-en-v1.5</code>) and re-run all four methods. No code change: the model is an environment variable.</li>
+  <li>If the vector side improves, retry hybrid; otherwise try a cross-encoder reranker on the BM25 + vector candidates.</li>
+  <li>Use the version number in the question as a filter (for "is this fixed in version X" questions).</li>
+</ol>
+
+<footer>
+Personal learning notes. The data is the public Ubuntu kernel changelog; questions and answers are my own.<br>
+<a href="./">Week 1</a> · <a href="notes/npu.html">Running this RAG on CPU / GPU / NPU (Chinese)</a> · <a href="https://github.com/chinyakao/rag_minimal">Source code</a>
+</footer>
+</main>
+</body>
+</html>
