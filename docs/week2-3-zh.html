@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 學習日誌 Week 2–3</title>
+<meta name="description" content="把從零寫的 RAG 換到 Linux kernel changelog, 加上 BM25 和 hybrid 檢索, 結果關鍵字檢索反而贏過 hybrid. 記錄原因和所有數字.">
+<link rel="canonical" href="https://chinyakao.github.io/rag_minimal/week2-3-zh.html">
+<link rel="alternate" hreflang="en" href="https://chinyakao.github.io/rag_minimal/week2-3.html">
+<link rel="alternate" hreflang="zh-Hant" href="https://chinyakao.github.io/rag_minimal/week2-3-zh.html">
+<meta property="og:title" content="RAG 學習日誌 Week 2–3">
+<meta property="og:description" content="把從零寫的 RAG 換到 Linux kernel changelog, 加上 BM25 和 hybrid 檢索, 結果關鍵字檢索反而贏過 hybrid. 記錄原因和所有數字.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://chinyakao.github.io/rag_minimal/week2-3-zh.html">
+<meta property="og:image" content="https://chinyakao.github.io/rag_minimal/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg:#fafaf7; --fg:#1f2328; --muted:#5b636b; --line:#e3e1da; --card:#ffffff;
+  --accent:#2f6f5e; --ok:#2f6f5e; --okbg:#e3f0ea; --miss:#a8472f; --missbg:#f7e6e0;
+  --manual:#8a6d1f; --manualbg:#f6efd8; --refuse:#2f5f8a; --refusebg:#e1ecf6; --code:#f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+    --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+    --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16181a; --fg:#e6e6e1; --muted:#9aa1a8; --line:#2d3135; --card:#1d2023;
+  --accent:#6fc0a8; --ok:#6fc0a8; --okbg:#1e3029; --miss:#e49a85; --missbg:#38231d;
+  --manual:#d9bd6a; --manualbg:#352e19; --refuse:#8fbbe3; --refusebg:#1d2b38; --code:#23272a;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:720px; margin:0 auto; padding:48px 16px 80px; }
+h1 { font-size:2rem; line-height:1.25; margin:0 0 8px; }
+h2 { font-size:1.3rem; margin:48px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+p, li { font-size:1.02rem; }
+.sub { color:var(--muted); margin:0 0 28px; }
+.kpi { display:flex; gap:12px; flex-wrap:wrap; margin:24px 0; }
+.kpi div { flex:1 1 150px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.kpi b { display:block; font-size:1.8rem; line-height:1.2; }
+.kpi span { color:var(--muted); font-size:.9rem; }
+.bar { display:flex; align-items:center; gap:10px; margin:8px 0; }
+.bl { width:6.5em; font-size:.92rem; color:var(--muted); }
+.track { flex:1; height:14px; background:var(--line); border-radius:7px; overflow:hidden; }
+.track i { display:block; height:100%; background:var(--accent); border-radius:7px; }
+.bv { width:2.6em; text-align:right; font-variant-numeric:tabular-nums; font-size:.92rem; }
+ul.grid { list-style:none; padding:0; margin:16px 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; }
+.cell { border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; font-size:.82rem; border:1px solid transparent; }
+.cell b { font-size:1rem; }
+.cell.ok { background:var(--okbg); color:var(--ok); }
+.cell.miss { background:var(--missbg); color:var(--miss); }
+.cell.manual { background:var(--manualbg); color:var(--manual); }
+.cell.refuse { background:var(--refusebg); color:var(--refuse); }
+.legend { color:var(--muted); font-size:.88rem; }
+code { background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em; }
+pre { background:var(--code); padding:14px 16px; border-radius:10px; overflow-x:auto; font-size:.88rem; line-height:1.6; }
+pre code { background:none; padding:0; }
+.note { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:8px; padding:12px 16px; margin:16px 0; }
+.tag { color:var(--manual); font-size:.85rem; }
+footer { margin-top:56px; color:var(--muted); font-size:.88rem; }
+@media (max-width:480px) { h1 { font-size:1.6rem; } .bl { width:5.5em; } }
+
+.lang { text-align:right; font-size:.9rem; margin-bottom:8px; }
+.lang a { color:var(--accent); text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:3px 12px; }
+.lang a:hover { border-color:var(--accent); }
+
+h3 { font-size:1.08rem; margin:28px 0 8px; }
+.tbl { overflow-x:auto; margin:16px 0; }
+table { border-collapse:collapse; width:100%; font-size:.92rem; font-variant-numeric:tabular-nums; }
+th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:center; }
+th:first-child, td:first-child { text-align:left; }
+thead th { color:var(--muted); font-weight:600; }
+td.ok { color:var(--ok); background:var(--okbg); }
+td.miss { color:var(--miss); background:var(--missbg); }
+tr.best td { font-weight:700; }
+.nav { font-size:.92rem; color:var(--muted); }
+.nav a, footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<nav class="lang"><a href="week2-3.html" hreflang="en">English</a></nav>
+<p class="nav"><a href="zh.html">← Week 1</a></p>
+<h1>RAG 學習日誌 Week 2–3</h1>
+<p class="sub">關鍵字檢索、hybrid 檢索，以及一份不會騙人的評估集。2026-11-07</p>
+
+<p>第 1 週我不用框架寫了一個最小 RAG。這次的更新是接下來做的事：把資料換成更貼近我日常工作的 Linux kernel changelog，加上關鍵字檢索（BM25）和 hybrid 檢索，然後因為第一次的結果好得不太真實，又重寫了一部分評估題目。</p>
+
+<div class="kpi">
+  <div><b>0.72 → 1.00</b><span>原 18 題的 hit@3，向量 → BM25</span></div>
+  <div><b>3 / 8</b><span>換句話說的題目，任何單一方法最多只對 3 題</span></div>
+  <div><b>0</b><span>新增套件數：BM25 和 RRF 都是自己寫的</span></div>
+</div>
+
+<h2>第 2 週：換一份更難、更真實的資料</h2>
+<p>我把藝人維基條目換成公開的 Ubuntu <code>linux-oem-7.0</code> kernel changelog：18 個版本，一個版本一個檔案，切成 3,588 個 chunk。這是我工作上會讀的文件，對檢索來說也很難：一長串 patch 標題、驅動名稱、<code>OV02C10</code> 這種晶片型號、<code>0xC05</code> 這種十六進位代碼，而且版本號只寫在每個檔案開頭一次。</p>
+<p>我寫了 20 題新題目，分五種題型（單一事實、多行整合、跨版本、推理題例如「我在版本 X，這個修好了嗎？」，以及兩題應該拒答的），每題答案都對照 changelog 原文確認過。</p>
+<ul>
+  <li><b>向量 baseline：hit@3 = 13/18 = 0.72。</b>沒打中的 5 題全都跟精確字串或版本號有關。</li>
+  <li><b>實驗：每個 chunk 前面加上版本標題。</b>沒有改善（還是 0.72），一題變對、另一題變錯。embedding 模型不會把版本字串當成要精確比對的東西。</li>
+</ul>
+<div class="note">第 2 週的結論：版本號、十六進位代碼這種精確字串，本來就不是 embedding 擅長的。這直接指向關鍵字檢索。</div>
+
+<h2>第 3 週：BM25、hybrid，和更公平的測試</h2>
+<h3>加了什麼</h3>
+<ul>
+  <li><b>BM25</b>，用 numpy 手寫（約 40 行）。斷詞時保留 <code>0xc05</code>、<code>ov02c10</code>、<code>1018.18</code> 這類字串，讓它們可以精確比對。</li>
+  <li><b>Hybrid 檢索，用 RRF 融合。</b>向量和 BM25 各取前 50 名，再用 Reciprocal Rank Fusion（倒數排名融合）合併：每個 chunk 在每份名單得到 <code>1/(60 + 名次)</code> 分。它只看名次，所以兩邊差很多的分數尺度（cosine 0–1、BM25 0–50）不用先標準化。</li>
+  <li><b>加權 RRF</b>：<code>BM25_WEIGHT=2</code> 讓 BM25 的貢獻變兩倍。</li>
+  <li>一個開關切換：<code>python eval.py --oem --bm25</code> 或 <code>--hybrid</code>。</li>
+</ul>
+
+<h3>第一次的結果：好得太誇張</h3>
+<p>只用 BM25 拿到 <b>18/18</b>，hybrid 17/18。先別高興，我回頭看題目：這些題目是我邊讀 changelog 邊寫的，用字幾乎一樣，天生對關鍵字檢索有利。真實使用者不會打「oversized UATS command」，而是說「我的 wifi 一直出問題」。</p>
+
+<h3>所以我加了 8 題換句話說的題目</h3>
+<p>每題都用使用者描述症狀的方式問，避開 changelog 裡的驅動名稱、晶片型號和 bug 標題。例如原文是「Fix hang on shutdown with TBT3 connected」，題目寫成「插著 Thunderbolt dock 關機時電腦會當掉」。</p>
+
+<h3>結果（hit@3）</h3>
+<div class="tbl"><table><thead><tr><th>方法</th><th>原 18 題</th><th>換句話說 8 題</th><th>全部 26 題</th></tr></thead><tbody><tr><td>只用向量</td><td>13/18</td><td>3/8</td><td>16/26 = 0.62</td></tr><tr class=best><td>只用 BM25</td><td>18/18</td><td>3/8</td><td>21/26 = 0.81</td></tr><tr><td>Hybrid（RRF 等權重）</td><td>17/18</td><td>3/8</td><td>20/26 = 0.77</td></tr><tr><td>Hybrid（RRF, BM25 權重 2）</td><td>17/18</td><td>2/8</td><td>19/26 = 0.73</td></tr></tbody></table></div>
+<p class="legend">逐題結果（Q19、Q20 應拒答、沒有正確文件，不計分；* = 換句話說的題目）：</p>
+<div class="tbl"><table><thead><tr><th>#</th><th>向量</th><th>BM25</th><th>hybrid</th><th>hybrid BM25×2</th></tr></thead><tbody><tr><td>Q1</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q2</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q3</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q4</td><td class="miss">未中</td><td class="ok">命中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q5</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q6</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q7</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q8</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q9</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q10</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q11</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q12</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q13</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q14</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q15</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q16</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q17</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q18</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q21 *</td><td class="ok">命中</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q22 *</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q23 *</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr><tr><td>Q24 *</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q25 *</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="miss">未中</td></tr><tr><td>Q26 *</td><td class="ok">命中</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q27 *</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td><td class="miss">未中</td></tr><tr><td>Q28 *</td><td class="miss">未中</td><td class="ok">命中</td><td class="ok">命中</td><td class="ok">命中</td></tr></tbody></table></div>
+
+<h2>我學到的事</h2>
+<h3>1. 評估集決定了結論</h3>
+<p>題目照抄原文時，BM25 看起來完美；換成使用者的說法後，每種方法都只對 3 題以下。如果我在第一次就停下來，會得到錯誤的結論。從此之後，用使用者的話寫題目是我建評估集的固定步驟。</p>
+<h3>2. Hybrid 不會自動比較好</h3>
+<p>換句話說的題目，向量和 BM25 各對 3 題，但對的是<b>不同</b>的題（向量：Q21、Q23、Q26；BM25：Q23、Q25、Q28）。兩者聯集有 5/8，hybrid 卻還是只有 3 題。RRF 獎勵的是在<i>兩份</i>名單都排前面的 chunk。兩邊各自找到不同答案時，兩個答案互相拉低，最後是「兩邊都還可以」的 chunk 勝出。</p>
+<h3>3. 加權也救不了</h3>
+<p>把 BM25 權重調成兩倍，結果反而稍微變差（19/26）。問題不在哪一邊比較大聲，而是兩份名單幾乎沒有重疊。</p>
+<h3>4. 真正的瓶頸是 embedding 模型</h3>
+<p>現在用的是小型、通用的多語言 MiniLM。理解換句話說本來就是向量該擅長的事，它卻只對 3/8。向量那一邊本身夠強，hybrid 才幫得上忙。</p>
+<div class="note">換句話說只有 8 題，差 1 題就是 12 個百分點。這些數字看方向，不是最終定論。</div>
+
+<h2>下一步</h2>
+<ol>
+  <li>換一個英文檢索模型（例如 <code>BAAI/bge-small-en-v1.5</code>），四種方法全部重跑。程式不用改，模型是環境變數。</li>
+  <li>如果向量變強，再試 hybrid；如果沒有，改試在 BM25 + 向量的候選上加 cross-encoder reranker。</li>
+  <li>從問題裡解析版本號當過濾條件（針對「版本 X 修好了沒」這類題目）。</li>
+</ol>
+
+<footer>
+個人學習筆記。資料來自公開的 Ubuntu kernel changelog，題目和答案是我自己寫的。<br>
+<a href="zh.html">Week 1</a> · <a href="notes/npu.html">在 CPU / GPU / NPU 上跑這個 RAG</a> · <a href="https://github.com/chinyakao/rag_minimal">原始碼</a>
+</footer>
+</main>
+</body>
+</html>

@@ -4,12 +4,15 @@
     python rag.py index                      # 讀 data/ 建索引
     python rag.py ask "你的問題"              # 檢索 + 生成
     python rag.py ask "你的問題" --no-llm     # 只看檢索結果 (不需 API key)
+    RETRIEVAL=hybrid python rag.py ask "..."  # 檢索方式: vector (預設) / bm25 / hybrid
 """
 import argparse
 import json
 import os
+import re
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -49,6 +52,15 @@ EMBED_DEVICE = os.environ.get("EMBED_DEVICE", "CPU")
 CHUNK_SIZE = 400      # 字元數; 之後可改成 token 數並做實驗
 CHUNK_OVERLAP = 80
 TOP_K = 4
+
+# 檢索方式: vector = 只用向量 (預設); bm25 = 只用關鍵字; hybrid = 兩者用 RRF 融合
+RETRIEVAL = os.environ.get("RETRIEVAL", "vector")
+BM25_K1, BM25_B = 1.5, 0.75   # BM25 常用預設值
+RRF_K = 60                    # RRF 常用預設值, 越大則排名前後的差距越小
+# 加權 RRF: BM25 那一邊的分數乘上這個權重 (向量固定為 1). 預設 1 = 原本的等權重.
+# 例如 BM25_WEIGHT=2: 某個 chunk 在 BM25 排第 1 的貢獻是 2/61, 比向量排第 1 的 1/61 大一倍.
+BM25_WEIGHT = float(os.environ.get("BM25_WEIGHT", "1"))
+CANDIDATES = 50               # hybrid 時兩邊各取前幾名來融合
 
 _model = None
 
@@ -124,14 +136,100 @@ def load_index():
     if not INDEX_FILE.exists():
         sys.exit("找不到索引, 請先執行: python rag.py index")
     matrix = np.load(INDEX_FILE)["matrix"]
-    records = json.loads(CHUNKS_FILE.read_text(encoding="utf-8"))
-    return matrix, records
+    return matrix, load_records()
 
 
-def retrieve(query, k=TOP_K):
-    matrix, records = load_index()
+def load_records():
+    if not CHUNKS_FILE.exists():
+        sys.exit("找不到索引, 請先執行: python rag.py index")
+    return json.loads(CHUNKS_FILE.read_text(encoding="utf-8"))
+
+
+def vector_scores(query, matrix):
     q = embed([query])[0]
-    scores = matrix @ q  # 已正規化, 內積即 cosine similarity
+    return matrix @ q  # 已正規化, 內積即 cosine similarity
+
+
+# ---------- Step 3b: BM25 關鍵字檢索 ----------
+# 英文/數字: 小寫, 保留 "0xc05", "ov02c10", "7.0.0", "1018.18" 這種中間有 . 或 _ 的字;
+# 中文沒有空格, 用相鄰兩字 (bigram) 當詞, 不需要斷詞套件.
+_WORD = re.compile(r"[a-z0-9]+(?:[._][a-z0-9]+)*")
+_CJK = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def tokenize(text):
+    text = text.lower()
+    tokens = _WORD.findall(text)
+    for run in _CJK.findall(text):
+        tokens += [run] if len(run) == 1 else [run[i:i + 2] for i in range(len(run) - 1)]
+    return tokens
+
+
+class BM25:
+    """手寫 BM25. 分數 = sum over 查詢詞 of idf * tf*(k1+1) / (tf + k1*(1-b+b*長度/平均長度))."""
+
+    def __init__(self, texts, k1=BM25_K1, b=BM25_B):
+        self.k1, self.b = k1, b
+        self.tfs = [Counter(tokenize(t)) for t in texts]
+        self.lens = np.array([sum(tf.values()) for tf in self.tfs], dtype=np.float32)
+        self.avg_len = float(self.lens.mean())
+        df = Counter(term for tf in self.tfs for term in tf)
+        n = len(texts)
+        # 出現在越少 chunk 的詞越有鑑別力 (例如 "0xc05"), "the" 這種詞幾乎是 0
+        self.idf = {t: float(np.log(1 + (n - d + 0.5) / (d + 0.5))) for t, d in df.items()}
+
+    def scores(self, query):
+        out = np.zeros(len(self.tfs), dtype=np.float32)
+        norm = self.k1 * (1 - self.b + self.b * self.lens / self.avg_len)
+        for term in set(tokenize(query)):
+            idf = self.idf.get(term)
+            if idf is None:
+                continue
+            tf = np.array([d.get(term, 0) for d in self.tfs], dtype=np.float32)
+            out += idf * tf * (self.k1 + 1) / (tf + norm)
+        return out
+
+
+_bm25 = None
+
+
+def get_bm25(records):
+    """BM25 不需另存索引, 直接從 chunks 建 (幾千個 chunk 不到 1 秒), 只建一次."""
+    global _bm25
+    if _bm25 is None:
+        _bm25 = BM25([r["text"] for r in records])
+    return _bm25
+
+
+def rrf(rankings, weights=None, k=RRF_K):
+    """Reciprocal Rank Fusion: 每個 chunk 的分數 = sum 權重/(k + 名次). 只看名次, 不看原始分數,
+    所以 cosine (0~1) 和 BM25 (0~幾十) 不用先調成同一個尺度."""
+    weights = weights or [1.0] * len(rankings)
+    fused = {}
+    for ranking, w in zip(rankings, weights):
+        for rank, i in enumerate(ranking, 1):
+            fused[i] = fused.get(i, 0.0) + w / (k + rank)
+    return sorted(fused.items(), key=lambda x: -x[1])
+
+
+def retrieve(query, k=TOP_K, mode=None):
+    """回傳 [(分數, record)]. 分數的意義依 mode 而不同: cosine / BM25 / RRF."""
+    mode = mode or RETRIEVAL
+    if mode == "bm25":
+        records = load_records()
+        scores = get_bm25(records).scores(query)
+    elif mode == "vector":
+        matrix, records = load_index()
+        scores = vector_scores(query, matrix)
+    elif mode == "hybrid":
+        matrix, records = load_index()
+        n = min(CANDIDATES, len(records))
+        by_vec = np.argsort(-vector_scores(query, matrix))[:n]
+        by_bm25 = np.argsort(-get_bm25(records).scores(query))[:n]
+        fused = rrf([by_vec, by_bm25], weights=[1.0, BM25_WEIGHT])
+        return [(s, records[i]) for i, s in fused[:k]]
+    else:
+        sys.exit(f"未知的 RETRIEVAL={mode}, 可用 vector / bm25 / hybrid")
     top = np.argsort(-scores)[:k]
     return [(float(scores[i]), records[i]) for i in top]
 
@@ -178,7 +276,7 @@ def ask(question, use_llm=True):
         print(f"[{n}] score={score:.3f} {r['source']}#{r['chunk_id']}: {preview}...")
 
     if not use_llm:
-        print(f"\n檢索耗時 {t_retrieve * 1000:.0f}ms (含查詢嵌入)")
+        print(f"\n檢索耗時 {t_retrieve * 1000:.0f}ms ({RETRIEVAL}, 第一次查詢含模型與 BM25 載入)")
         return
 
     prompt = build_prompt(question, hits)
