@@ -221,7 +221,7 @@ def run_device(dev, pipe, prompt, args, idle_w):
         meter.start()
         t0 = time.perf_counter()
         try:
-            res = pipe.generate(prompt, gen, streamer)
+            res = pipe.generate([prompt], gen, streamer)  # 傳 list 才會回傳含 perf_metrics 的結果, 傳 str 只回傳字串
         except RuntimeError as e:
             # 萬一某個裝置 (例如較舊版的 NPU pipeline) 不支援 repetition_penalty, 就不加再跑一次
             if gen.repetition_penalty == 1.0:
@@ -230,7 +230,7 @@ def run_device(dev, pipe, prompt, args, idle_w):
             gen.repetition_penalty = 1.0
             first[0] = None
             t0 = time.perf_counter()
-            res = pipe.generate(prompt, gen, streamer)
+            res = pipe.generate([prompt], gen, streamer)  # 傳 list 才會回傳含 perf_metrics 的結果, 傳 str 只回傳字串
         t_end = time.perf_counter()
         p = meter.stop()
         stopped = intr.flag
