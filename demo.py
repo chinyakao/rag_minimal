@@ -38,12 +38,17 @@ import rag  # noqa: E402
 from ownership import give_back  # noqa: E402
 from power import PowerMeter, idle_baseline  # noqa: E402
 
-# 現場備用題 (都在 eval 題庫範圍內, 檢索得到): 觀眾沒提問時用
+# 現場備用題 (2026-11-07 確認 BM25 檢索得到正確段落): 觀眾沒提問時用
 SUGGESTED = [
-    "Which kernel version fixed the upside-down front camera image?",
-    "What changes were made to the intel_vpu / NPU driver?",
-    "Which CVEs were fixed in 7.0.0-1017.17?",
+    "Which kernel version fixed the upside-down front camera image?",       # 答案 7.0.0-1018.18
+    "Which version added a bounds check for ivpu firmware runtime memory?",  # 答案 7.0.0-1012.12
+    "What accel/ivpu (Intel NPU) driver changes were made?",                 # 1012.12 與 1017.17 都有
 ]
+# 刻意展示檢索失敗用 (三個模型都會回答找不到):
+# - "What changes were made to the intel_vpu / NPU driver?": changelog 寫的是 accel/ivpu, 字對不上,
+#   BM25 反而找到 mt76 Wi-Fi 的 "NPU" 項目
+# - "Which CVEs were fixed in 7.0.0-1017.17?": 版本號只出現在檔案開頭那段, CVE 項目的段落沒有版本號,
+#   而且 564 個 CVE 也不是 4 段資料列得完的 (這種「列出全部」的問題用 grep 比較適合)
 
 # 終端機顏色 (分享畫面時比較好讀); NO_COLOR=1 或輸出不是終端機時關閉
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
