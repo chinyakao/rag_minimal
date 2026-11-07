@@ -53,7 +53,7 @@ PAGES = [
     "extend-kubernetes/compute-storage-net/device-plugins",
 ]
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "k8s")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "k8s")
 MANIFEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "k8s_manifest.tsv")
 
 ADMONITIONS = {"note": "Note", "caution": "Caution", "warning": "Warning"}
