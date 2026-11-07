@@ -92,7 +92,7 @@ tr.best td { font-weight:700; }
 <h1>RAG 學習日誌 Week 2–3</h1>
 <p class="sub">關鍵字檢索、hybrid 檢索，以及一份不會騙人的評估集。2026-11-07</p>
 
-<p>第 1 週我不用框架寫了一個最小 RAG。這次的更新是接下來做的事：把資料換成更貼近我日常工作的 Linux kernel changelog，加上關鍵字檢索（BM25）和 hybrid 檢索，然後因為第一次的結果好得不太真實，又重寫了一部分評估題目。</p>
+<p>第 1 週我不用框架寫了一個最小 RAG。這次的更新是接下來做的事：把資料換成公開的 Linux kernel changelog，加上關鍵字檢索（BM25）和 hybrid 檢索，然後因為第一次的結果好得不太真實，又重寫了一部分評估題目。</p>
 
 <div class="kpi">
   <div><b>0.72 → 1.00</b><span>原 18 題的 hit@3，向量 → BM25</span></div>
@@ -100,8 +100,8 @@ tr.best td { font-weight:700; }
   <div><b>0</b><span>新增套件數：BM25 和 RRF 都是自己寫的</span></div>
 </div>
 
-<h2>第 2 週：換一份更難、更真實的資料</h2>
-<p>我把藝人維基條目換成公開的 Ubuntu <code>linux-oem-7.0</code> kernel changelog：18 個版本，一個版本一個檔案，切成 3,588 個 chunk。這是我工作上會讀的文件，對檢索來說也很難：一長串 patch 標題、驅動名稱、<code>OV02C10</code> 這種晶片型號、<code>0xC05</code> 這種十六進位代碼，而且版本號只寫在每個檔案開頭一次。</p>
+<h2>第 2 週：換一份更難的資料</h2>
+<p>我把藝人維基條目換成公開的 Ubuntu <code>linux-oem-7.0</code> kernel changelog：18 個版本，一個版本一個檔案，切成 3,588 個 chunk。這份資料對檢索來說很難：一長串 patch 標題、驅動名稱、<code>OV02C10</code> 這種晶片型號、<code>0xC05</code> 這種十六進位代碼，而且版本號只寫在每個檔案開頭一次。</p>
 <p>我寫了 20 題新題目，分五種題型（單一事實、多行整合、跨版本、推理題例如「我在版本 X，這個修好了嗎？」，以及兩題應該拒答的），每題答案都對照 changelog 原文確認過。</p>
 <ul>
   <li><b>向量 baseline：hit@3 = 13/18 = 0.72。</b>沒打中的 5 題全都跟精確字串或版本號有關。</li>

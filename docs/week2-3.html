@@ -92,7 +92,7 @@ tr.best td { font-weight:700; }
 <h1>RAG Learning Journal: Weeks 2–3</h1>
 <p class="sub">Keyword search, hybrid search, and an eval set that tells the truth. 2026-11-07</p>
 
-<p>In week 1 I built a minimal RAG without a framework. This update covers what came next: I moved it to data closer to my daily work (a Linux kernel changelog), added keyword search (BM25) and hybrid search, and then rewrote part of the eval set because the first result looked too good to be true.</p>
+<p>In week 1 I built a minimal RAG without a framework. This update covers what came next: I moved it to a new dataset (a public Linux kernel changelog), added keyword search (BM25) and hybrid search, and then rewrote part of the eval set because the first result looked too good to be true.</p>
 
 <div class="kpi">
   <div><b>0.72 → 1.00</b><span>hit@3 on the original 18 questions, vector → BM25</span></div>
@@ -100,8 +100,8 @@ tr.best td { font-weight:700; }
   <div><b>0</b><span>new dependencies: BM25 and RRF are hand-written</span></div>
 </div>
 
-<h2>Week 2: a harder, more realistic corpus</h2>
-<p>I replaced the artist Wikipedia pages with the public Ubuntu <code>linux-oem-7.0</code> kernel changelog: 18 versions, one file per version, 3,588 chunks. It is the kind of document I read at work, and it is hard for retrieval: long lists of patch titles, driver names, chip IDs like <code>OV02C10</code>, hex codes like <code>0xC05</code>, and the version number written only once at the top of each file.</p>
+<h2>Week 2: a harder corpus</h2>
+<p>I replaced the artist Wikipedia pages with the public Ubuntu <code>linux-oem-7.0</code> kernel changelog: 18 versions, one file per version, 3,588 chunks. It is hard for retrieval: long lists of patch titles, driver names, chip IDs like <code>OV02C10</code>, hex codes like <code>0xC05</code>, and the version number written only once at the top of each file.</p>
 <p>I wrote 20 new questions in five types (single fact, multi-line, cross-version, reasoning such as "is this fixed if I am on version X?", and two that should be refused), and checked every answer against the changelog.</p>
 <ul>
   <li><b>Vector baseline: hit@3 = 13/18 = 0.72.</b> The five misses were all about exact strings or versions.</li>
