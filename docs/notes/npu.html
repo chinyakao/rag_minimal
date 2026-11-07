@@ -191,7 +191,7 @@ a { color:var(--accent); }
 <p><b>固定大小（靜態形狀）</b>是 NPU 的重要限制：所以 embedding 一律把每段文字補或切成 128 個 token、一次送 8 段（查詢時送 1 段）。為了公平，CPU 和 GPU 也用同樣的形狀。LLM 則要事先告訴 NPU prompt 最長多少（<code>MAX_PROMPT_LEN=2048</code>）。</p>
 
 <h2 id="setup">5. 環境準備</h2>
-<p>詳細步驟在 <a href="https://chinyakao.github.io/linux-platform-enablement/zh/platform/intel-npu.html">linux-platform-enablement 的 NPU 筆記</a>，重點：</p>
+<p>詳細步驟在 <a href="https://chinyakao.github.io/client-linux-notes/zh/platform/intel-npu.html">client-linux-notes 的 NPU 筆記</a>，重點：</p>
 <ul>
 <li>kernel 6.8 以上就有 <code>intel_vpu</code> 驅動（這次是 7.0），會產生 <code>/dev/accel/accel0</code>。</li>
 <li>從 <a href="https://github.com/intel/linux-npu-driver/releases">intel/linux-npu-driver</a> 裝 user-space 套件：<code>intel-driver-compiler-npu</code>、<code>intel-fw-npu</code>、<code>intel-level-zero-npu</code>、<code>libze1</code>。</li>
@@ -355,7 +355,7 @@ DATA_DIR=data/oem-7.0 sudo -E .venv/bin/python bench/bench_llm.py --model ov_mod
 </ol>
 
 <footer>
-個人學習筆記。程式在 <a href="https://github.com/chinyakao/rag_minimal">rag_minimal</a> 的 <code>embed_ov.py</code> 與 <code>bench/</code>；驅動與量測方法在 <a href="https://github.com/chinyakao/linux-platform-enablement">linux-platform-enablement</a>。
+個人學習筆記。程式在 <a href="https://github.com/chinyakao/rag_minimal">rag_minimal</a> 的 <code>embed_ov.py</code> 與 <code>bench/</code>；驅動與量測方法在 <a href="https://github.com/chinyakao/client-linux-notes">client-linux-notes</a>。
 </footer>
 </main>
 </body>

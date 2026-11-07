@@ -101,7 +101,7 @@ CHUNK_TITLE=1 python eval.py                                  # 與沒加標題�
 
 目標: 同一個 embedding 模型 (與一個小型 LLM) 分別跑在 Intel Meteor Lake 筆電的 CPU, 內顯 (GPU) 與 NPU,
 比較速度, 功耗與結果是否一致. NPU 驅動安裝與功耗量測方法的筆記放在
-[linux-platform-enablement](https://github.com/chinyakao/linux-platform-enablement).
+[client-linux-notes](https://github.com/chinyakao/client-linux-notes).
 
 ### 前置條件 (Linux)
 
