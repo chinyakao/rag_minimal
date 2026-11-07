@@ -7,7 +7,7 @@
     python scripts/fetch_oem_changelog.py                       # 輸出到 data/oem-7.0/
     python scripts/fetch_oem_changelog.py --min 1010 --max 1018
     python scripts/fetch_oem_changelog.py --file changelog      # 用本機已下載的檔案
-    DATA_DIR=data/oem-7.0 python rag.py index
+    python rag.py index                                         # data/oem-7.0 是預設資料集
 
 輸出檔名: linux-oem-7.0_7.0.0-1018.18.md, 內容 = 標頭 (版本, 發行日期, 來源) + 該版本的 changelog 本文.
 維護者 email 那一行 (" -- 名字 <email>  日期") 不保留, 只留日期.
