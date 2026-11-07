@@ -25,6 +25,7 @@
 """
 import argparse
 import os
+import re
 import signal
 import sys
 import time
@@ -112,6 +113,35 @@ def show_hits(hits, mode, ms):
 
 
 # ---------- 本機 LLM (OpenVINO GenAI) ----------
+# 1.5B 的小模型對 prompt 很敏感, 所以本機模型用一份專門的 prompt (rag.build_prompt 留給 Claude):
+# - 英文指示: changelog 是英文, 中英混雜的指示小模型比較容易跟不上
+# - 自己的 system message: 不然 Qwen 的 chat template 會塞入預設的 "You are Qwen, created by Alibaba Cloud...",
+#   小模型有時會把它當成內容講出來 (例如回答 "Qwen, the Qwen, ...")
+# - 每段資料前直接寫版本號: 原本版本只藏在檔名裡, 小模型常抓錯是哪一版
+LOCAL_SYSTEM = (
+    "You answer questions about Ubuntu linux-oem-7.0 kernel changelogs. "
+    "Use ONLY the numbered excerpts. Each excerpt starts with the kernel version it belongs to. "
+    "Answer in 1 to 3 short sentences: give the kernel version and cite the excerpt like [1]. "
+    "If the excerpts do not answer the question, reply exactly: Not found in the changelog."
+)
+_VERSION = re.compile(r"\d+\.\d+\.\d+-\d+\.\d+")
+
+
+def build_local_prompt(question, hits):
+    parts = []
+    for n, (_, r) in enumerate(hits, 1):
+        m = _VERSION.search(r["source"])
+        version = m.group(0) if m else r["source"]
+        parts.append(f"[{n}] kernel version {version}:\n{' '.join(r['text'].split())}")
+    user = "Excerpts:\n\n" + "\n\n".join(parts) + f"\n\nQuestion: {question}"
+    return [{"role": "system", "content": LOCAL_SYSTEM}, {"role": "user", "content": user}]
+
+
+def to_prompt_text(pipe, messages):
+    """自己套 chat template (帶上我們的 system message), 之後 generate 時就不要再套一次."""
+    return pipe.get_tokenizer().apply_chat_template(messages, add_generation_prompt=True)
+
+
 class Interrupt:
     """生成中按 Ctrl-C: 只停掉目前這個裝置, 不結束整個 demo."""
 
@@ -173,6 +203,10 @@ def run_device(dev, pipe, prompt, args, idle_w):
     gen = ov_genai.GenerationConfig()
     gen.max_new_tokens = args.max_new_tokens
     gen.do_sample = False  # greedy: 同一題每次回答一樣, 現場比較可預期
+    # greedy 加上小模型很容易陷入重複迴圈 ("[7.0] is the kernel version ..." 一直重複), 加一點重複懲罰
+    gen.repetition_penalty = args.repetition_penalty
+    if hasattr(gen, "apply_chat_template"):
+        gen.apply_chat_template = False  # prompt 已經套過 chat template
 
     header(f"Step 2  {dev} 回答")
     meter = PowerMeter()
@@ -186,7 +220,17 @@ def run_device(dev, pipe, prompt, args, idle_w):
 
         meter.start()
         t0 = time.perf_counter()
-        res = pipe.generate([prompt], gen, streamer)
+        try:
+            res = pipe.generate(prompt, gen, streamer)
+        except RuntimeError as e:
+            # 萬一某個裝置 (例如較舊版的 NPU pipeline) 不支援 repetition_penalty, 就不加再跑一次
+            if gen.repetition_penalty == 1.0:
+                raise
+            print(dim(f"({dev} 不支援 repetition_penalty, 改用預設值: {e})"))
+            gen.repetition_penalty = 1.0
+            first[0] = None
+            t0 = time.perf_counter()
+            res = pipe.generate(prompt, gen, streamer)
         t_end = time.perf_counter()
         p = meter.stop()
         stopped = intr.flag
@@ -257,16 +301,16 @@ def answer(question, args, pipes, records, idle_w):
     t0 = time.perf_counter()
     hits = retrieve(question, args.retrieval, records)
     show_hits(hits, args.retrieval, (time.perf_counter() - t0) * 1000)
-    prompt = rag.build_prompt(question, hits)
+    messages = build_local_prompt(question, hits)
 
     rows = []
     for i, (dev, pipe) in enumerate(pipes.items()):
         if i and args.cooldown > 0:
             time.sleep(args.cooldown)  # 讓功耗回落, 下一個裝置的數字比較乾淨
-        rows.append(run_device(dev, pipe, prompt, args, idle_w))
+        rows.append(run_device(dev, pipe, to_prompt_text(pipe, messages), args, idle_w))
     summary(rows)
     if args.claude:
-        run_claude(prompt)
+        run_claude(rag.build_prompt(question, hits))
 
 
 def main():
@@ -275,7 +319,9 @@ def main():
     ap.add_argument("--devices", nargs="+", default=["GPU", "NPU"], help="依序跑的裝置, 預設 GPU NPU")
     ap.add_argument("--retrieval", default="bm25", choices=["bm25", "vector", "hybrid"],
                     help="檢索方式, 預設 bm25 (oem-7.0 上 hit@3 最高, 也不用載 embedding 模型)")
-    ap.add_argument("--max-new-tokens", type=int, default=200)
+    ap.add_argument("--max-new-tokens", type=int, default=128)
+    ap.add_argument("--repetition-penalty", type=float, default=1.1,
+                    help="大於 1 會壓低重複的字, 避免小模型鬼打牆; 1.0 = 不懲罰")
     ap.add_argument("--max-prompt-len", type=int, default=2048, help="NPU 用: prompt 最大 token 數")
     ap.add_argument("--cooldown", type=float, default=2.0, help="裝置之間的間隔秒數")
     ap.add_argument("--idle-seconds", type=float, default=3.0, help="開場量閒置功耗的秒數, 0 = 不量")
