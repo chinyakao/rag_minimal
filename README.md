@@ -52,6 +52,7 @@ CHUNK_TITLE=1 python eval.py                                  # 與沒加標題�
 - `eval.py`: hit@k 檢索評估
 - `eval_oem.py`: 題庫 28 題 (原本 20 題 + 8 題換句話說)
 - `embed_ov.py`: OpenVINO embedding 後端 (CPU / GPU / NPU), `EMBED_BACKEND=openvino` 時使用
+- `demo.py`: 現場 demo, 問 changelog 問題, 同一個本機小模型依序跑在 GPU 與 NPU, 即時顯示速度與功耗 (見下方「現場 demo」)
 - `bench/`: CPU / GPU / NPU 效能與功耗 benchmark (見下方「在 CPU / GPU / NPU 上跑」); `bench/bench_ov_cpu.py` 找 OpenVINO CPU 比 PyTorch 慢的原因
 - `scripts/fetch_oem_changelog.py`: 下載 kernel changelog 到 `data/oem-7.0/`
 - `data/`: 資料集資料夾 (**不進版控**; 預設讀 `data/oem-7.0/`, 也可用環境變數 `DATA_DIR` 指定其他資料夾)
@@ -142,6 +143,23 @@ python bench/bench_llm.py --model ov_models/qwen2.5-1.5b-int4
 ```
 
 用 `rag.py` 真正檢索出的 RAG prompt, 量載入時間, TTFT (prefill), 每個 token 時間 (decode), tokens/s 與 J/token.
+
+### 現場 demo (`demo.py`)
+
+給分享會用: 輸入一個 changelog 問題, 先顯示 BM25 找到的段落, 再把同一個 prompt **依序**丟給 GPU 與 NPU 上的
+Qwen2.5-1.5B (int4), 回答一個字一個字流出來, 每個裝置結束後顯示首字時間, tokens/s, SoC 功率與比閒置多用的能量,
+最後並排比較. 依序跑是因為 GPU 與 NPU 共用記憶體頻寬與 SoC 功耗預算, 同時跑數字會失真.
+
+```bash
+python demo.py --model ov_models/qwen2.5-1.5b-int4                      # 互動模式 (q 離開)
+python demo.py --model ov_models/qwen2.5-1.5b-int4 --claude             # 最後加上雲端 Claude 當品質對照
+sudo -E .venv/bin/python demo.py --model ov_models/qwen2.5-1.5b-int4    # 要顯示功耗時
+```
+
+- 啟動時就載入並暖機所有裝置 (NPU 第一次編譯最久, 有 `ov_cache/` 後會快很多), 請在開場前先開好.
+- 預設檢索是 BM25, 不需要先建 embedding 索引; `--retrieval vector|hybrid` 則要先 `python rag.py index`.
+- 生成中按 Ctrl-C 只中斷目前的裝置; 某個裝置載入失敗會略過, 不影響其他裝置.
+- 回答用 greedy decoding, 同一題每次結果相同, 方便事先排練.
 
 ### 功耗量測的權限
 
